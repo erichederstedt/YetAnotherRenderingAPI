@@ -1,0 +1,32 @@
+{
+	"folders": [
+		{
+			"path": "."
+		},
+		{
+			"path": "..\\Include"
+		},
+		{
+			"path": "..\\Bin"
+		},
+		{
+			"path": "..\\Scripts"
+		}
+	],
+	"settings": {
+		"files.associations": {
+			"*.json": "jsonc",
+			"iostream": "cpp",
+			"memory": "cpp",
+			"atomic": "cpp",
+			"cstdint": "cpp",
+			"ratio": "cpp",
+			"combaseapi.h": "c",
+			"apisetcconv.h": "c",
+			"yara.h": "c",
+			"yara_d3d12.h": "c",
+			"windows.h": "c",
+			"dxgi1_2.h": "c"
+		}
+	}
+}
