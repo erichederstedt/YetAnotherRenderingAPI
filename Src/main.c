@@ -8,6 +8,8 @@
 #include "yara.h"
 #include "yara_d3d12.h"
 
+#include "util.h"
+
 static bool DoneRunning;
 
 LRESULT CALLBACK WindowCallback(HWND Window, UINT Message, WPARAM WParam, LPARAM LParam)
@@ -31,6 +33,9 @@ LRESULT CALLBACK WindowCallback(HWND Window, UINT Message, WPARAM WParam, LPARAM
 
 int CALLBACK WinMain(HINSTANCE CurrentInstance, HINSTANCE PrevInstance, LPSTR CommandLine, int ShowCode)
 {
+    SetCpuAndThreadPriority();
+    CreateConsole();
+
     CurrentInstance; PrevInstance; CommandLine; ShowCode;
     printf("Hello World!\n");
 
@@ -46,7 +51,7 @@ int CALLBACK WinMain(HINSTANCE CurrentInstance, HINSTANCE PrevInstance, LPSTR Co
 
     // D3D12
     struct Device* device = 0;
-    create_device(&device);
+    device_create(&device);
 
     struct Command_Queue* command_queue = 0;
     device_create_command_queue(device, &command_queue);
@@ -57,11 +62,14 @@ int CALLBACK WinMain(HINSTANCE CurrentInstance, HINSTANCE PrevInstance, LPSTR Co
     struct Command_List* command_list = 0;
     device_create_command_list(device, &command_list);
 
-    struct Descriptor_Set* descriptor_set = 0;
-    device_create_descriptor_set(device, &descriptor_set);
+    struct Descriptor_Set* rtv_descriptor_set = 0;
+    device_create_descriptor_set(device, DESCRIPTOR_TYPE_RTV, 2048, &rtv_descriptor_set);
+
+    struct Descriptor_Set* cbv_srv_uav_descriptor_set = 0;
+    device_create_descriptor_set(device, DESCRIPTOR_TYPE_CBV_SRV_UAV, 2048, &cbv_srv_uav_descriptor_set);
 
     struct Buffer* backbuffers[BACKBUFFER_COUNT] = {0};
-    swapchain_create_backbuffers(swapchain, device, descriptor_set, backbuffers);
+    swapchain_create_backbuffers(swapchain, device, rtv_descriptor_set, backbuffers);
     
     struct Shader* shader = 0;
     device_create_shader(device, &shader);
@@ -78,11 +86,68 @@ int CALLBACK WinMain(HINSTANCE CurrentInstance, HINSTANCE PrevInstance, LPSTR Co
     struct Upload_Buffer* upload_buffer = 0;
     device_create_upload_buffer(device, vertices, sizeof(vertices), &upload_buffer);
 
-    struct Fence* fence = 0;
-    device_create_fence(device, &fence);
+    struct Buffer* vertex_buffer = 0;
+    struct Buffer_Descriptor buffer_description = {
+        .width = sizeof(vertices),
+        .height = 1,
+        .descriptor_sets = {
+            cbv_srv_uav_descriptor_set
+        },
+        .descriptor_sets_count = 1,
+        .buffer_type = BUFFER_TYPE_BUFFER,
+        .bind_types = {
+            BIND_TYPE_SRV
+        },
+        .bind_types_count = 1
+    };
+    device_create_buffer(device, buffer_description, &vertex_buffer);
+
+    {
+        struct Command_List* upload_command_list = 0;
+        device_create_command_list(device, &upload_command_list);
+
+        command_list_reset(upload_command_list);
+
+        D3D12_RESOURCE_BARRIER RenderBarrier1[] = {
+            {
+                .Type = D3D12_RESOURCE_BARRIER_TYPE_TRANSITION,
+                .Flags = D3D12_RESOURCE_BARRIER_FLAG_NONE,
+                .Transition.pResource = vertex_buffer->resource,
+                .Transition.StateBefore = D3D12_RESOURCE_STATE_GENERIC_READ,
+                .Transition.StateAfter = D3D12_RESOURCE_STATE_COPY_DEST
+            },
+        };
+        ID3D12GraphicsCommandList_ResourceBarrier(command_list_get_current_d3d12_command_list(upload_command_list), ARRAY_COUNT(RenderBarrier1), RenderBarrier1);
+
+        command_list_copy_upload_buffer_to_buffer(upload_command_list, upload_buffer, vertex_buffer);
+
+        D3D12_RESOURCE_BARRIER RenderBarrier2[] = {
+            {
+                .Type = D3D12_RESOURCE_BARRIER_TYPE_TRANSITION,
+                .Flags = D3D12_RESOURCE_BARRIER_FLAG_NONE,
+                .Transition.pResource = vertex_buffer->resource,
+                .Transition.StateBefore = D3D12_RESOURCE_STATE_COPY_DEST,
+                .Transition.StateAfter = D3D12_RESOURCE_STATE_GENERIC_READ
+            },
+        };
+        ID3D12GraphicsCommandList_ResourceBarrier(command_list_get_current_d3d12_command_list(upload_command_list), ARRAY_COUNT(RenderBarrier2), RenderBarrier2);
+
+        command_list_close(upload_command_list);
+
+        command_queue_execute(command_queue, &upload_command_list, 1);
+    }
+
+    struct Fence* fence[BACKBUFFER_COUNT] = {0};
+    for (size_t i = 0; i < BACKBUFFER_COUNT; i++)
+    {
+        device_create_fence(device, &fence[i]);
+        fence_signal(fence[i], command_queue);
+    }
     
     while (!DoneRunning)
     {
+        unsigned long long timestamp1 = GetRdtsc();
+
         MSG Message;
         if (PeekMessageA(&Message, 0, 0, 0, PM_REMOVE))
         {
@@ -121,14 +186,14 @@ int CALLBACK WinMain(HINSTANCE CurrentInstance, HINSTANCE PrevInstance, LPSTR Co
             .Transition.StateBefore = D3D12_RESOURCE_STATE_PRESENT,
             .Transition.StateAfter = D3D12_RESOURCE_STATE_RENDER_TARGET
         };
-        ID3D12GraphicsCommandList_ResourceBarrier(command_list->command_list, 1, &RenderBarrier);
+        ID3D12GraphicsCommandList_ResourceBarrier(command_list_get_current_d3d12_command_list(command_list), 1, &RenderBarrier);
         
         command_list_set_render_targets(command_list, &backbuffer, 1, 0);
         float clear_color[4] = {0.1f, 0.1f, 0.1f, 1.0f};
         command_list_clear_render_target(command_list, backbuffer, clear_color);
-        struct Buffer shit = {0};
-        shit.resource = upload_buffer->resource;
-        command_list_set_vertex_buffer(command_list, &shit, sizeof(vertices), 5 * sizeof(float));
+        // struct Buffer shit = {0};
+        // shit.resource = upload_buffer->resource;
+        command_list_set_vertex_buffer(command_list, vertex_buffer, sizeof(vertices), 5 * sizeof(float));
         command_list_set_primitive_topology(command_list, PRIMITIVE_TOPOLOGY_TRIANGLELIST);
         command_list_draw_instanced(command_list, 3, 1, 0, 0);
         
@@ -139,7 +204,7 @@ int CALLBACK WinMain(HINSTANCE CurrentInstance, HINSTANCE PrevInstance, LPSTR Co
             .Transition.StateBefore = D3D12_RESOURCE_STATE_RENDER_TARGET,
             .Transition.StateAfter = D3D12_RESOURCE_STATE_PRESENT
         };
-        ID3D12GraphicsCommandList_ResourceBarrier(command_list->command_list, 1, &PresentBarrier);
+        ID3D12GraphicsCommandList_ResourceBarrier(command_list_get_current_d3d12_command_list(command_list), 1, &PresentBarrier);
         command_list_close(command_list);
 
         command_queue_execute(command_queue, &command_list, 1);
@@ -148,10 +213,14 @@ int CALLBACK WinMain(HINSTANCE CurrentInstance, HINSTANCE PrevInstance, LPSTR Co
         //NOTE(chen): waiting until all the commands are executed,
         //            effectively doing single buffering. It's inefficient
         //            but simple and easy to understand.
-        fence_signal(fence, command_queue);
-        fence_wait_for_completion(fence);
+        fence_signal(fence[device->frame], command_queue);
+        fence_wait_for_completion(fence[NEXT_FRAME(device)]);
+        device->frame = NEXT_FRAME(device);
         
-        Sleep(2);
+        // Sleep(2);
+
+        unsigned long long timestamp2 = GetRdtsc();
+        printf("ms: %f \r", (timestamp2 - timestamp1) * 1000.0 / GetRdtscFreq());
     }
     
     return 0;

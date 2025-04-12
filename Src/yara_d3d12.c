@@ -9,7 +9,7 @@ void* alloc(size_t size)
     return allocation;
 }
 
-int create_device(struct Device** out_device)
+int device_create(struct Device** out_device)
 {
     *out_device = alloc(sizeof(struct Device));
 
@@ -71,53 +71,44 @@ int device_create_command_list(struct Device* device, struct Command_List** out_
 {
     *out_command_list = alloc(sizeof(struct Command_List));
 
-    ID3D12Device_CreateCommandAllocator(device->device, D3D12_COMMAND_LIST_TYPE_DIRECT, &IID_ID3D12CommandAllocator, &(*out_command_list)->command_allocator);
-    ID3D12Device_CreateCommandList(device->device, 0, D3D12_COMMAND_LIST_TYPE_DIRECT, (*out_command_list)->command_allocator, 0, &IID_ID3D12CommandList, &(*out_command_list)->command_list);
-    ID3D12GraphicsCommandList_Close((*out_command_list)->command_list);
+    for (size_t i = 0; i < BACKBUFFER_COUNT; i++)
+    {
+        ID3D12Device_CreateCommandAllocator(device->device, D3D12_COMMAND_LIST_TYPE_DIRECT, &IID_ID3D12CommandAllocator, &(*out_command_list)->command_allocator[i]);
+        ID3D12Device_CreateCommandList(device->device, 0, D3D12_COMMAND_LIST_TYPE_DIRECT, (*out_command_list)->command_allocator[i], 0, &IID_ID3D12CommandList, &(*out_command_list)->command_list[i]);
+        ID3D12GraphicsCommandList_Close((*out_command_list)->command_list[i]);
+    }
+    
+    (*out_command_list)->device = device;
 
     return 0;
 }
-int device_create_descriptor_set(struct Device* device, struct Descriptor_Set** out_descriptor_set)
+int device_create_descriptor_set(struct Device* device, enum DESCRIPTOR_TYPE descriptor_type, size_t descriptor_count, struct Descriptor_Set** out_descriptor_set)
 {
     *out_descriptor_set = alloc(sizeof(struct Descriptor_Set));
 
     D3D12_DESCRIPTOR_HEAP_DESC descriptor_heap_description = {
-        .NumDescriptors = BACKBUFFER_COUNT,
+        .NumDescriptors = (UINT)descriptor_count,
         .Flags = D3D12_DESCRIPTOR_HEAP_FLAG_NONE,
-        .NodeMask = 0
+        .NodeMask = 0,
+        .Type = to_d3d12_descriptor_type[descriptor_type]
     };
-    {
-        descriptor_heap_description.Type = D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV;
-        ID3D12Device_CreateDescriptorHeap(device->device, &descriptor_heap_description, &IID_ID3D12DescriptorHeap, &(*out_descriptor_set)->descriptor_heap_cbv_srv_uav);
-        (*out_descriptor_set)->descriptor_size = ID3D12Device_GetDescriptorHandleIncrementSize(device->device, descriptor_heap_description.Type);
-    }
-    {
-        descriptor_heap_description.Type = D3D12_DESCRIPTOR_HEAP_TYPE_SAMPLER;
-        ID3D12Device_CreateDescriptorHeap(device->device, &descriptor_heap_description, &IID_ID3D12DescriptorHeap, &(*out_descriptor_set)->descriptor_heap_sampler);
-        (*out_descriptor_set)->descriptor_size = ID3D12Device_GetDescriptorHandleIncrementSize(device->device, descriptor_heap_description.Type);
-    }
-    {
-        descriptor_heap_description.Type = D3D12_DESCRIPTOR_HEAP_TYPE_RTV;
-        ID3D12Device_CreateDescriptorHeap(device->device, &descriptor_heap_description, &IID_ID3D12DescriptorHeap, &(*out_descriptor_set)->descriptor_heap_rtv);
-        (*out_descriptor_set)->descriptor_size = ID3D12Device_GetDescriptorHandleIncrementSize(device->device, descriptor_heap_description.Type);
-    }
-    {
-        descriptor_heap_description.Type = D3D12_DESCRIPTOR_HEAP_TYPE_DSV;
-        ID3D12Device_CreateDescriptorHeap(device->device, &descriptor_heap_description, &IID_ID3D12DescriptorHeap, &(*out_descriptor_set)->descriptor_heap_dsv);
-        (*out_descriptor_set)->descriptor_size = ID3D12Device_GetDescriptorHandleIncrementSize(device->device, descriptor_heap_description.Type);
-    }
-        
+    ID3D12Device_CreateDescriptorHeap(device->device, &descriptor_heap_description, &IID_ID3D12DescriptorHeap, &(*out_descriptor_set)->descriptor_heap);
+    (*out_descriptor_set)->descriptor_size = ID3D12Device_GetDescriptorHandleIncrementSize(device->device, descriptor_heap_description.Type);
+    (*out_descriptor_set)->descriptor_heap_type = descriptor_heap_description.Type;
+    
     return 0;
 }
-int device_create_buffer(struct Device* device, struct Descriptor_Set* descriptor_set, size_t size, enum BUFFER_TYPE buffer_type, enum BIND_TYPE bind_types[], size_t bind_types_count, struct Buffer** out_buffer)
+int device_create_buffer(struct Device* device, struct Buffer_Descriptor buffer_description, struct Buffer** out_buffer)
 {
+    *out_buffer = alloc(sizeof(struct Buffer));
+
     D3D12_HEAP_PROPERTIES defaultHeapProperties = {
         .Type = D3D12_HEAP_TYPE_DEFAULT
     };
     D3D12_RESOURCE_DESC resource_desc = {
         .Alignment = 0,
-        .Width = size,
-        .Height = 1,
+        .Width = (UINT64)buffer_description.width,
+        .Height = (UINT)buffer_description.height,
         .DepthOrArraySize = 1,
         .MipLevels = 1,
         .Format = DXGI_FORMAT_UNKNOWN,
@@ -125,7 +116,7 @@ int device_create_buffer(struct Device* device, struct Descriptor_Set* descripto
         .Layout = D3D12_TEXTURE_LAYOUT_ROW_MAJOR,
         .Flags = D3D12_RESOURCE_FLAG_NONE
     };
-    switch (buffer_type)
+    switch (buffer_description.buffer_type)
     {
     case BUFFER_TYPE_BUFFER:
 	resource_desc.Dimension = D3D12_RESOURCE_DIMENSION_BUFFER;
@@ -135,21 +126,15 @@ int device_create_buffer(struct Device* device, struct Descriptor_Set* descripto
         break;
     }
 
-    int uav = 0; // Only used for the flags check bellow. Not related to the 3 counters bellow
-    
-    // This is fucking awful why did I do this to my self
-    int cbv_srv_uav = 0;
+    int uav = 0;
     int dsv = 0;
     int rtv = 0;
-    for (size_t i = 0; i < bind_types_count; i++)
+    for (size_t i = 0; i < buffer_description.bind_types_count; i++)
     {
-        switch (bind_types[i])
+        switch (buffer_description.bind_types[i])
         {
         case BIND_TYPE_UAV:
             uav = 1;
-        case BIND_TYPE_CBV:
-        case BIND_TYPE_SRV:
-            cbv_srv_uav = 1;
             break;
         case BIND_TYPE_DSV:
             dsv = 1;
@@ -166,35 +151,13 @@ int device_create_buffer(struct Device* device, struct Descriptor_Set* descripto
     if (dsv)
         resource_desc.Flags |= D3D12_RESOURCE_FLAG_ALLOW_DEPTH_STENCIL;
     
-    ID3D12Device_CreateCommittedResource(device->device, &defaultHeapProperties, D3D12_HEAP_FLAG_NONE, &resource_desc, D3D12_RESOURCE_STATE_COMMON, 0, &IID_ID3D12Resource, &(*out_buffer)->resource);
+    ID3D12Device_CreateCommittedResource(device->device, &defaultHeapProperties, D3D12_HEAP_FLAG_NONE, &resource_desc, D3D12_RESOURCE_STATE_GENERIC_READ, 0, &IID_ID3D12Resource, &(*out_buffer)->resource);
     
-    size_t total_heap_types = 0;
-    if (cbv_srv_uav)
-        total_heap_types++;
-    if (dsv)
-        total_heap_types++;
-    if (rtv)
-        total_heap_types++;
-    
-    D3D12_DESCRIPTOR_HEAP_TYPE* handle_types = _alloca(sizeof(D3D12_DESCRIPTOR_HEAP_TYPE) * total_heap_types);
-    size_t count_heap_types = 0;
-    if (cbv_srv_uav)
-        handle_types[count_heap_types++] = D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV;
-    if (dsv)
-        handle_types[count_heap_types++] = D3D12_DESCRIPTOR_HEAP_TYPE_DSV;
-    if (rtv)
-        handle_types[count_heap_types++] = D3D12_DESCRIPTOR_HEAP_TYPE_RTV;
-
-    struct Descriptor_Handle* handles = _alloca(sizeof(struct Descriptor_Handle) * total_heap_types);
-    descriptor_set_alloc(descriptor_set, handles, handle_types, total_heap_types);
-    for (size_t i = 0; i < bind_types_count; i++)
+    for (size_t i = 0; i < buffer_description.descriptor_sets_count; i++)
     {
-        (*out_buffer)->handles[handle_types[i]] = handles[i];
+        struct Descriptor_Set* descriptor_set = buffer_description.descriptor_sets[i];
+        (*out_buffer)->handles[to_yara_descriptor_type[descriptor_set->descriptor_heap_type]] = descriptor_set_alloc(descriptor_set);
     }
-
-    // @continue
-    // Is this enough?
-    // No fucking clue, test this with the vertex buffer
     
     return 0;
 }
@@ -308,14 +271,14 @@ void command_queue_execute(struct Command_Queue* command_queue, struct Command_L
     ID3D12CommandList** d3d12_command_lists = _alloca(sizeof(ID3D12CommandList*) * command_lists_count);
     for (size_t i = 0; i < command_lists_count; i++)
     {
-        d3d12_command_lists[i] = (ID3D12CommandList*)command_lists[i]->command_list;
+        d3d12_command_lists[i] = (ID3D12CommandList*)command_list_get_current_d3d12_command_list(command_lists[i]);
     }
     
     ID3D12CommandQueue_ExecuteCommandLists(command_queue->command_queue, (UINT)command_lists_count, d3d12_command_lists);
 }
 
 void swapchain_destroy(struct Swapchain* swapchain);
-int swapchain_create_backbuffers(struct Swapchain* swapchain, struct Device* device, struct Descriptor_Set* descriptor_set, struct Buffer** out_buffers)
+int swapchain_create_backbuffers(struct Swapchain* swapchain, struct Device* device, struct Descriptor_Set* rtv_descriptor_set, struct Buffer** out_buffers)
 {
     memset(out_buffers, 0, sizeof(struct Buffer) * BACKBUFFER_COUNT);
 
@@ -324,10 +287,7 @@ int swapchain_create_backbuffers(struct Swapchain* swapchain, struct Device* dev
         out_buffers[i] = alloc(sizeof(struct Buffer));
         struct Buffer* buffer = out_buffers[i];
 
-        struct Descriptor_Handle handle = {0};
-        D3D12_DESCRIPTOR_HEAP_TYPE heap_type = D3D12_DESCRIPTOR_HEAP_TYPE_RTV;
-        descriptor_set_alloc(descriptor_set, &handle, &heap_type, 1);
-        buffer->handles[D3D12_DESCRIPTOR_HEAP_TYPE_RTV] = handle;
+        buffer->handles[D3D12_DESCRIPTOR_HEAP_TYPE_RTV] = descriptor_set_alloc(rtv_descriptor_set);
 
         IDXGISwapChain3_GetBuffer(swapchain->swapchain, i, &IID_ID3D12Resource, &buffer->resource);
         ID3D12Device_CreateRenderTargetView(device->device, buffer->resource, 0, buffer->handles[D3D12_DESCRIPTOR_HEAP_TYPE_RTV].cpu_descriptor_handle);
@@ -348,16 +308,16 @@ int swapchain_present(struct Swapchain* swapchain)
 void command_list_destroy(struct Command_List* command_list);
 void command_list_reset(struct Command_List* command_list)
 {
-    ID3D12CommandAllocator_Reset(command_list->command_allocator);
-    ID3D12GraphicsCommandList_Reset(command_list->command_list, command_list->command_allocator, 0);
+    ID3D12CommandAllocator_Reset(command_list_get_current_d3d12_command_allocator(command_list));
+    ID3D12GraphicsCommandList_Reset(command_list_get_current_d3d12_command_list(command_list), command_list_get_current_d3d12_command_allocator(command_list), 0);
 }
 void command_list_set_pipeline_state_object(struct Command_List* command_list, struct Pipeline_State_Object* pipeline_state_object)
 {
-    ID3D12GraphicsCommandList_SetPipelineState(command_list->command_list, pipeline_state_object->pipeline_state_object);
+    ID3D12GraphicsCommandList_SetPipelineState(command_list_get_current_d3d12_command_list(command_list), pipeline_state_object->pipeline_state_object);
 }
 void command_list_set_shader(struct Command_List* command_list, struct Shader* shader)
 {
-    ID3D12GraphicsCommandList_SetGraphicsRootSignature(command_list->command_list, shader->root_signature);
+    ID3D12GraphicsCommandList_SetGraphicsRootSignature(command_list_get_current_d3d12_command_list(command_list), shader->root_signature);
 }
 void command_list_set_viewport(struct Command_List* command_list, struct Viewport viewport)
 {
@@ -369,7 +329,7 @@ void command_list_set_viewport(struct Command_List* command_list, struct Viewpor
         .MinDepth = viewport.min_depth,
         .MaxDepth = viewport.max_depth
     };
-    ID3D12GraphicsCommandList_RSSetViewports(command_list->command_list, 1, &d3d12_viewport);
+    ID3D12GraphicsCommandList_RSSetViewports(command_list_get_current_d3d12_command_list(command_list), 1, &d3d12_viewport);
 }
 void command_list_set_scissor_rect(struct Command_List* command_list, struct Rect scissor_rect)
 {
@@ -379,7 +339,7 @@ void command_list_set_scissor_rect(struct Command_List* command_list, struct Rec
         .right = scissor_rect.right,
         .bottom = scissor_rect.bottom
     };
-    ID3D12GraphicsCommandList_RSSetScissorRects(command_list->command_list, 1, &d3d12_scissor_rect);
+    ID3D12GraphicsCommandList_RSSetScissorRects(command_list_get_current_d3d12_command_list(command_list), 1, &d3d12_scissor_rect);
 }
 void command_list_set_render_targets(struct Command_List* command_list, struct Buffer* render_targets[], int render_targets_count, struct Buffer* opt_depth_buffer)
 {
@@ -389,12 +349,11 @@ void command_list_set_render_targets(struct Command_List* command_list, struct B
         handles[i] = render_targets[i]->handles[D3D12_DESCRIPTOR_HEAP_TYPE_RTV].cpu_descriptor_handle;
     }
     
-    ID3D12GraphicsCommandList_OMSetRenderTargets(command_list->command_list, render_targets_count, (const D3D12_CPU_DESCRIPTOR_HANDLE*)handles, 0, (const D3D12_CPU_DESCRIPTOR_HANDLE*)(opt_depth_buffer ? &opt_depth_buffer->handles[D3D12_DESCRIPTOR_HEAP_TYPE_DSV].cpu_descriptor_handle : 0));
+    ID3D12GraphicsCommandList_OMSetRenderTargets(command_list_get_current_d3d12_command_list(command_list), render_targets_count, (const D3D12_CPU_DESCRIPTOR_HANDLE*)handles, 0, (const D3D12_CPU_DESCRIPTOR_HANDLE*)(opt_depth_buffer ? &opt_depth_buffer->handles[D3D12_DESCRIPTOR_HEAP_TYPE_DSV].cpu_descriptor_handle : 0));
 }
 void command_list_clear_render_target(struct Command_List* command_list, struct Buffer* render_target, float clear_color[4])
 {
-    ID3D12GraphicsCommandList_ClearRenderTargetView(command_list->command_list, render_target->handles[D3D12_DESCRIPTOR_HEAP_TYPE_RTV].cpu_descriptor_handle, clear_color, 0, 0);
-    // ID3D12GraphicsCommandList_ClearDepthStencilView // Implement this
+    ID3D12GraphicsCommandList_ClearRenderTargetView(command_list_get_current_d3d12_command_list(command_list), render_target->handles[D3D12_DESCRIPTOR_HEAP_TYPE_RTV].cpu_descriptor_handle, clear_color, 0, 0);
 }
 void command_list_set_vertex_buffer(struct Command_List* command_list, struct Buffer* vertex_buffer, size_t size, size_t stride)
 {
@@ -403,51 +362,45 @@ void command_list_set_vertex_buffer(struct Command_List* command_list, struct Bu
         .SizeInBytes = (UINT)size,
         .StrideInBytes = (UINT)stride
     };
-    ID3D12GraphicsCommandList_IASetVertexBuffers(command_list->command_list, 0, 1, &vertex_buffer_view);
+    ID3D12GraphicsCommandList_IASetVertexBuffers(command_list_get_current_d3d12_command_list(command_list), 0, 1, &vertex_buffer_view);
 }
 void command_list_set_primitive_topology(struct Command_List* command_list, enum PRIMITIVE_TOPOLOGY primitive_topology)
 {
-    ID3D12GraphicsCommandList_IASetPrimitiveTopology(command_list->command_list, to_d3d12_primitive_topology[primitive_topology]);
+    ID3D12GraphicsCommandList_IASetPrimitiveTopology(command_list_get_current_d3d12_command_list(command_list), to_d3d12_primitive_topology[primitive_topology]);
 }
 void command_list_draw_instanced(struct Command_List* command_list, size_t vertex_count_per_instance, size_t instance_count, size_t start_vertex_location, size_t start_instance_location)
 {
-    ID3D12GraphicsCommandList_DrawInstanced(command_list->command_list, (UINT)vertex_count_per_instance, (UINT)instance_count, (UINT)start_vertex_location, (UINT)start_instance_location);
+    ID3D12GraphicsCommandList_DrawInstanced(command_list_get_current_d3d12_command_list(command_list), (UINT)vertex_count_per_instance, (UINT)instance_count, (UINT)start_vertex_location, (UINT)start_instance_location);
+}
+void command_list_copy_upload_buffer_to_buffer(struct Command_List* command_list, struct Upload_Buffer* src, struct Buffer* dst)
+{
+    ID3D12GraphicsCommandList_CopyResource(command_list_get_current_d3d12_command_list(command_list), dst->resource, src->resource);
 }
 int command_list_close(struct Command_List* command_list)
 {
-    ID3D12GraphicsCommandList_Close(command_list->command_list);
+    ID3D12GraphicsCommandList_Close(command_list_get_current_d3d12_command_list(command_list));
     return 0;
+}
+ID3D12CommandAllocator* command_list_get_current_d3d12_command_allocator(struct Command_List* command_list)
+{
+    return command_list->command_allocator[command_list->device->frame];
+}
+ID3D12GraphicsCommandList* command_list_get_current_d3d12_command_list(struct Command_List* command_list)
+{
+    return command_list->command_list[command_list->device->frame];
 }
 
 void descriptor_set_destroy(struct Descriptor_Set* descriptor_set);
-void descriptor_set_alloc(struct Descriptor_Set* descriptor_set, struct Descriptor_Handle handles[], D3D12_DESCRIPTOR_HEAP_TYPE types[], size_t handles_count)
+struct Descriptor_Handle descriptor_set_alloc(struct Descriptor_Set* descriptor_set)
 {
-    for (size_t i = 0; i < handles_count; i++)
-    {
-        D3D12_DESCRIPTOR_HEAP_TYPE type = types[i];
-        ID3D12DescriptorHeap* descriptor_heap = 0;
-        switch (type)
-        {
-            case D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV:
-            descriptor_heap = descriptor_set->descriptor_heap_cbv_srv_uav;
-            break;
-            case D3D12_DESCRIPTOR_HEAP_TYPE_SAMPLER:
-            descriptor_heap = descriptor_set->descriptor_heap_sampler;
-            break;
-            case D3D12_DESCRIPTOR_HEAP_TYPE_RTV:
-            descriptor_heap = descriptor_set->descriptor_heap_rtv;
-            break;
-            case D3D12_DESCRIPTOR_HEAP_TYPE_DSV:
-            descriptor_heap = descriptor_set->descriptor_heap_dsv;
-            break;
-        }
-        ID3D12DescriptorHeap_GetCPUDescriptorHandleForHeapStart(descriptor_set->descriptor_heap_rtv, &handles[i].cpu_descriptor_handle);
-        handles[i].cpu_descriptor_handle.ptr += descriptor_set->descriptor_count * descriptor_set->descriptor_size;
-        
-        ID3D12DescriptorHeap_GetGPUDescriptorHandleForHeapStart(descriptor_set->descriptor_heap_rtv, &handles[i].gpu_descriptor_handle);
-        handles[i].gpu_descriptor_handle.ptr += descriptor_set->descriptor_count * descriptor_set->descriptor_size;    
-    }
+    struct Descriptor_Handle handle = {0};
+    ID3D12DescriptorHeap_GetCPUDescriptorHandleForHeapStart(descriptor_set->descriptor_heap, &handle.cpu_descriptor_handle);
+    handle.cpu_descriptor_handle.ptr += descriptor_set->descriptor_count * descriptor_set->descriptor_size;
+    
+    ID3D12DescriptorHeap_GetGPUDescriptorHandleForHeapStart(descriptor_set->descriptor_heap, &handle.gpu_descriptor_handle);
+    handle.gpu_descriptor_handle.ptr += descriptor_set->descriptor_count * descriptor_set->descriptor_size;  
     descriptor_set->descriptor_count++;
+    return handle;
 }
 
 void buffer_destroy(struct Buffer* buffer);

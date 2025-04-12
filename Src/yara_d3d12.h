@@ -14,6 +14,7 @@
 
 #define ARRAY_COUNT(Array) (sizeof(Array)/sizeof((Array)[0]))
 #define BACKBUFFER_COUNT 2
+#define NEXT_FRAME(device) ((device->frame + 1) % BACKBUFFER_COUNT)
 #define ID3DBlob_QueryInterface(self, riid, ppvObject) ((self)->lpVtbl->QueryInterface(self, riid, ppvObject))
 #define ID3DBlob_AddRef(self) ((self)->lpVtbl->AddRef(self))
 #define ID3DBlob_Release(self) ((self)->lpVtbl->Release(self))
@@ -24,6 +25,7 @@ struct Device
 {
     ID3D12Device* device;
     IDXGIFactory2* factory;
+    int frame;
 };
 struct Command_Queue
 {
@@ -35,17 +37,17 @@ struct Swapchain
 };
 struct Command_List
 {
-    ID3D12CommandAllocator* command_allocator;
-    ID3D12GraphicsCommandList* command_list;
+    ID3D12CommandAllocator* command_allocator[BACKBUFFER_COUNT];
+    ID3D12GraphicsCommandList* command_list[BACKBUFFER_COUNT];
+    
+    struct Device* device;
 };
 struct Descriptor_Set
 {
-    ID3D12DescriptorHeap* descriptor_heap_cbv_srv_uav;
-    ID3D12DescriptorHeap* descriptor_heap_sampler;
-    ID3D12DescriptorHeap* descriptor_heap_rtv;
-    ID3D12DescriptorHeap* descriptor_heap_dsv;
+    ID3D12DescriptorHeap* descriptor_heap;
     unsigned int descriptor_count;
     unsigned int descriptor_size;
+    D3D12_DESCRIPTOR_HEAP_TYPE descriptor_heap_type;
 };
 struct Descriptor_Handle
 {
@@ -80,7 +82,7 @@ struct Fence
     HANDLE event;
 };
 
-static D3D_PRIMITIVE_TOPOLOGY to_d3d12_primitive_topology[PRIMITIVE_TOPOLOGY_COUNT] = {
+static D3D_PRIMITIVE_TOPOLOGY to_d3d12_primitive_topology[_PRIMITIVE_TOPOLOGY_COUNT] = {
     D3D_PRIMITIVE_TOPOLOGY_POINTLIST,
     D3D_PRIMITIVE_TOPOLOGY_LINELIST,
     D3D_PRIMITIVE_TOPOLOGY_LINESTRIP,
@@ -91,7 +93,22 @@ static D3D_PRIMITIVE_TOPOLOGY to_d3d12_primitive_topology[PRIMITIVE_TOPOLOGY_COU
     D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST_ADJ,
     D3D_PRIMITIVE_TOPOLOGY_TRIANGLESTRIP_ADJ
 };
+static D3D12_DESCRIPTOR_HEAP_TYPE to_d3d12_descriptor_type[_DESCRIPTOR_TYPE_COUNT] = {
+    D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV,
+    D3D12_DESCRIPTOR_HEAP_TYPE_SAMPLER,
+    D3D12_DESCRIPTOR_HEAP_TYPE_RTV,
+    D3D12_DESCRIPTOR_HEAP_TYPE_DSV
+};
+static enum DESCRIPTOR_TYPE to_yara_descriptor_type[D3D12_DESCRIPTOR_HEAP_TYPE_NUM_TYPES] = {
+    DESCRIPTOR_TYPE_CBV_SRV_UAV,
+    DESCRIPTOR_TYPE_SAMPLER,
+    DESCRIPTOR_TYPE_RTV,
+    DESCRIPTOR_TYPE_DSV
+};
 
-void descriptor_set_alloc(struct Descriptor_Set* descriptor_set, struct Descriptor_Handle handles[], D3D12_DESCRIPTOR_HEAP_TYPE types[], size_t handles_count);
+struct Descriptor_Handle descriptor_set_alloc(struct Descriptor_Set* descriptor_set);
+
+ID3D12CommandAllocator* command_list_get_current_d3d12_command_allocator(struct Command_List* command_list);
+ID3D12GraphicsCommandList* command_list_get_current_d3d12_command_list(struct Command_List* command_list);
 
 #endif
