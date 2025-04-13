@@ -51,6 +51,7 @@ struct Fence;
 struct Swapchain_Descriptor
 {
     void* window;
+    size_t backbuffer_count;
 };
 struct Buffer_Descriptor
 {
@@ -123,8 +124,9 @@ void upload_buffer_destroy(struct Upload_Buffer* upload_buffer);
 void pipeline_state_object_destroy(struct Pipeline_State_Object* pipeline_state_object);
 
 void fence_destroy(struct Fence* fence);
-void fence_signal(struct Fence* fence, struct Command_Queue* command_queue);
+unsigned long long fence_signal(struct Fence* fence, struct Command_Queue* command_queue);
 void fence_wait_for_completion(struct Fence* fence);
 int fence_is_completed(struct Fence* fence);
+unsigned long long fence_get_completed_value(struct Fence* fence);
 
 #endif

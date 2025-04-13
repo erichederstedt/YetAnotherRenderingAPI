@@ -8,6 +8,8 @@ if errorlevel 1 (
     call "run_vcvar.bat"
 )
 
+call "copy_asan_dll.bat"
+
 pushd ..
 
 mkdir Bin
@@ -21,9 +23,9 @@ IF "%~1"=="" (
     set outputTarget=> scripts/logfile.txt 2>&1
 )
 
-rem /fsanitize=address /O2
+rem /O2
 @set CC=cl
-@set FLAGS=/std:c++17 /D_CRT_SECURE_NO_WARNINGS /DSDL_MAIN_HANDLED /Z7 /W4 /WX /MP /EHsc /I "./Include"
+@set FLAGS=/std:c++17 /D_CRT_SECURE_NO_WARNINGS /fsanitize=address /DSDL_MAIN_HANDLED /Z7 /W4 /WX /MP /EHsc /I "./Include"
 @set "SRC_FILES="
 rem set "SRC_FILES=!SRC_FILES! "Src/main.cpp""
 for /r "Src" %%I in (*.c) do (

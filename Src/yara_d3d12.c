@@ -20,6 +20,8 @@ int device_create(struct Device** out_device)
     D3D12CreateDevice(0, D3D_FEATURE_LEVEL_12_0, &IID_ID3D12Device, &(*out_device)->device);
     CreateDXGIFactory2(0, &IID_IDXGIFactory2, &(*out_device)->factory);
 
+    (*out_device)->command_list_allocator = command_list_allocator_create(*out_device);
+
     return 0;
 }
 
@@ -40,6 +42,7 @@ int device_create_command_queue(struct Device* device, struct Command_Queue** ou
         .NodeMask = 0
     };
     ID3D12Device_CreateCommandQueue(device->device, &command_queue_desc, &IID_ID3D12CommandQueue, &(*out_command_queue)->command_queue);
+    (*out_command_queue)->device = device;
     return 0;
 }
 int device_create_swapchain(struct Device* device, struct Command_Queue* command_queue, struct Swapchain_Descriptor swapchain_descriptor, struct Swapchain** out_swapchain)
@@ -54,29 +57,44 @@ int device_create_swapchain(struct Device* device, struct Command_Queue* command
         .SampleDesc.Count = 1, // Single sample per pixel
         .SampleDesc.Quality = 0,
         .BufferUsage = DXGI_USAGE_RENDER_TARGET_OUTPUT,
-        .BufferCount = BACKBUFFER_COUNT,
+        .BufferCount = (UINT)swapchain_descriptor.backbuffer_count,
         .Scaling = DXGI_SCALING_STRETCH,
         .SwapEffect = DXGI_SWAP_EFFECT_FLIP_DISCARD,
         .AlphaMode = DXGI_ALPHA_MODE_IGNORE,
         .Flags = 0
     };
     IDXGISwapChain1 *swapchain1 = 0;
-    HRESULT result = IDXGIFactory2_CreateSwapChainForHwnd(device->factory, (IUnknown*)command_queue->command_queue, (HWND)swapchain_descriptor.window, &d3d12_swapchain_description, 0, 0, &swapchain1);
+    IDXGIFactory2_CreateSwapChainForHwnd(device->factory, (IUnknown*)command_queue->command_queue, (HWND)swapchain_descriptor.window, &d3d12_swapchain_description, 0, 0, &swapchain1);
     IDXGISwapChain1_QueryInterface(swapchain1, &IID_IDXGISwapChain3, &(*out_swapchain)->swapchain);
-    result;
+    (*out_swapchain)->swapchain_descriptor = swapchain_descriptor;
+    (*out_swapchain)->fences = alloc(sizeof(struct Fence*) * swapchain_descriptor.backbuffer_count);
+    for (size_t i = 0; i < swapchain_descriptor.backbuffer_count; i++)
+    {
+        device_create_fence(device, &(*out_swapchain)->fences[i]);
+        fence_signal((*out_swapchain)->fences[i], command_queue);
+    }
+    (*out_swapchain)->command_queue = command_queue;
 
     return 0;
+}
+struct Command_List_Allocation* device_create_command_list_allocation(struct Device* device)
+{
+    struct Command_List_Allocation* command_list_allocation = alloc(sizeof(struct Command_List_Allocation));
+    ID3D12Device_CreateCommandAllocator(device->device, D3D12_COMMAND_LIST_TYPE_DIRECT, &IID_ID3D12CommandAllocator, &(command_list_allocation)->command_allocator);
+    ID3D12Device_CreateCommandList(device->device, 0, D3D12_COMMAND_LIST_TYPE_DIRECT, (command_list_allocation)->command_allocator, 0, &IID_ID3D12CommandList, &(command_list_allocation)->command_list);
+    ID3D12GraphicsCommandList_Close((command_list_allocation)->command_list);
+    return command_list_allocation;
 }
 int device_create_command_list(struct Device* device, struct Command_List** out_command_list)
 {
     *out_command_list = alloc(sizeof(struct Command_List));
 
-    for (size_t i = 0; i < BACKBUFFER_COUNT; i++)
-    {
-        ID3D12Device_CreateCommandAllocator(device->device, D3D12_COMMAND_LIST_TYPE_DIRECT, &IID_ID3D12CommandAllocator, &(*out_command_list)->command_allocator[i]);
-        ID3D12Device_CreateCommandList(device->device, 0, D3D12_COMMAND_LIST_TYPE_DIRECT, (*out_command_list)->command_allocator[i], 0, &IID_ID3D12CommandList, &(*out_command_list)->command_list[i]);
-        ID3D12GraphicsCommandList_Close((*out_command_list)->command_list[i]);
-    }
+    // for (size_t i = 0; i < BACKBUFFER_COUNT; i++)
+    // {
+    //     ID3D12Device_CreateCommandAllocator(device->device, D3D12_COMMAND_LIST_TYPE_DIRECT, &IID_ID3D12CommandAllocator, &(*out_command_list)->command_allocator[i]);
+    //     ID3D12Device_CreateCommandList(device->device, 0, D3D12_COMMAND_LIST_TYPE_DIRECT, (*out_command_list)->command_allocator[i], 0, &IID_ID3D12CommandList, &(*out_command_list)->command_list[i]);
+    //     ID3D12GraphicsCommandList_Close((*out_command_list)->command_list[i]);
+    // }
     
     (*out_command_list)->device = device;
 
@@ -271,18 +289,25 @@ void command_queue_execute(struct Command_Queue* command_queue, struct Command_L
     ID3D12CommandList** d3d12_command_lists = _alloca(sizeof(ID3D12CommandList*) * command_lists_count);
     for (size_t i = 0; i < command_lists_count; i++)
     {
-        d3d12_command_lists[i] = (ID3D12CommandList*)command_list_get_current_d3d12_command_list(command_lists[i]);
+        d3d12_command_lists[i] = (ID3D12CommandList*)command_lists[i]->command_list_allocation->command_list;
     }
     
     ID3D12CommandQueue_ExecuteCommandLists(command_queue->command_queue, (UINT)command_lists_count, d3d12_command_lists);
+
+    unsigned long long fence_value = fence_signal(command_queue->device->command_list_allocator.fence, command_queue);
+    for (size_t i = 0; i < command_lists_count; i++)
+    {
+        command_lists[i]->command_list_allocation->fence_value = fence_value;
+        command_lists[i]->command_list_allocation = 0;
+    }
 }
 
 void swapchain_destroy(struct Swapchain* swapchain);
 int swapchain_create_backbuffers(struct Swapchain* swapchain, struct Device* device, struct Descriptor_Set* rtv_descriptor_set, struct Buffer** out_buffers)
 {
-    memset(out_buffers, 0, sizeof(struct Buffer) * BACKBUFFER_COUNT);
+    memset(out_buffers, 0, sizeof(struct Buffer*) * swapchain->swapchain_descriptor.backbuffer_count);
 
-    for (unsigned int i = 0; i < BACKBUFFER_COUNT; i++)
+    for (unsigned int i = 0; i < swapchain->swapchain_descriptor.backbuffer_count; i++)
     {
         out_buffers[i] = alloc(sizeof(struct Buffer));
         struct Buffer* buffer = out_buffers[i];
@@ -302,22 +327,29 @@ int swapchain_get_current_backbuffer_index(struct Swapchain* swapchain)
 int swapchain_present(struct Swapchain* swapchain)
 {
     IDXGISwapChain3_Present(swapchain->swapchain, 1, 0);
+
+    int next_frame_index = (swapchain->frame + 1) % swapchain->swapchain_descriptor.backbuffer_count;
+    fence_signal(swapchain->fences[swapchain->frame], swapchain->command_queue);
+    fence_wait_for_completion(swapchain->fences[next_frame_index]);
+    swapchain->frame = next_frame_index;
+
     return 0;
 }
 
 void command_list_destroy(struct Command_List* command_list);
 void command_list_reset(struct Command_List* command_list)
 {
-    ID3D12CommandAllocator_Reset(command_list_get_current_d3d12_command_allocator(command_list));
-    ID3D12GraphicsCommandList_Reset(command_list_get_current_d3d12_command_list(command_list), command_list_get_current_d3d12_command_allocator(command_list), 0);
+    command_list->command_list_allocation = command_list_allocator_alloc(&command_list->device->command_list_allocator);
+    ID3D12CommandAllocator_Reset(command_list->command_list_allocation->command_allocator);
+    ID3D12GraphicsCommandList_Reset(command_list->command_list_allocation->command_list, command_list->command_list_allocation->command_allocator, 0);
 }
 void command_list_set_pipeline_state_object(struct Command_List* command_list, struct Pipeline_State_Object* pipeline_state_object)
 {
-    ID3D12GraphicsCommandList_SetPipelineState(command_list_get_current_d3d12_command_list(command_list), pipeline_state_object->pipeline_state_object);
+    ID3D12GraphicsCommandList_SetPipelineState(command_list->command_list_allocation->command_list, pipeline_state_object->pipeline_state_object);
 }
 void command_list_set_shader(struct Command_List* command_list, struct Shader* shader)
 {
-    ID3D12GraphicsCommandList_SetGraphicsRootSignature(command_list_get_current_d3d12_command_list(command_list), shader->root_signature);
+    ID3D12GraphicsCommandList_SetGraphicsRootSignature(command_list->command_list_allocation->command_list, shader->root_signature);
 }
 void command_list_set_viewport(struct Command_List* command_list, struct Viewport viewport)
 {
@@ -329,7 +361,7 @@ void command_list_set_viewport(struct Command_List* command_list, struct Viewpor
         .MinDepth = viewport.min_depth,
         .MaxDepth = viewport.max_depth
     };
-    ID3D12GraphicsCommandList_RSSetViewports(command_list_get_current_d3d12_command_list(command_list), 1, &d3d12_viewport);
+    ID3D12GraphicsCommandList_RSSetViewports(command_list->command_list_allocation->command_list, 1, &d3d12_viewport);
 }
 void command_list_set_scissor_rect(struct Command_List* command_list, struct Rect scissor_rect)
 {
@@ -339,7 +371,7 @@ void command_list_set_scissor_rect(struct Command_List* command_list, struct Rec
         .right = scissor_rect.right,
         .bottom = scissor_rect.bottom
     };
-    ID3D12GraphicsCommandList_RSSetScissorRects(command_list_get_current_d3d12_command_list(command_list), 1, &d3d12_scissor_rect);
+    ID3D12GraphicsCommandList_RSSetScissorRects(command_list->command_list_allocation->command_list, 1, &d3d12_scissor_rect);
 }
 void command_list_set_render_targets(struct Command_List* command_list, struct Buffer* render_targets[], int render_targets_count, struct Buffer* opt_depth_buffer)
 {
@@ -349,11 +381,11 @@ void command_list_set_render_targets(struct Command_List* command_list, struct B
         handles[i] = render_targets[i]->handles[D3D12_DESCRIPTOR_HEAP_TYPE_RTV].cpu_descriptor_handle;
     }
     
-    ID3D12GraphicsCommandList_OMSetRenderTargets(command_list_get_current_d3d12_command_list(command_list), render_targets_count, (const D3D12_CPU_DESCRIPTOR_HANDLE*)handles, 0, (const D3D12_CPU_DESCRIPTOR_HANDLE*)(opt_depth_buffer ? &opt_depth_buffer->handles[D3D12_DESCRIPTOR_HEAP_TYPE_DSV].cpu_descriptor_handle : 0));
+    ID3D12GraphicsCommandList_OMSetRenderTargets(command_list->command_list_allocation->command_list, render_targets_count, (const D3D12_CPU_DESCRIPTOR_HANDLE*)handles, 0, (const D3D12_CPU_DESCRIPTOR_HANDLE*)(opt_depth_buffer ? &opt_depth_buffer->handles[D3D12_DESCRIPTOR_HEAP_TYPE_DSV].cpu_descriptor_handle : 0));
 }
 void command_list_clear_render_target(struct Command_List* command_list, struct Buffer* render_target, float clear_color[4])
 {
-    ID3D12GraphicsCommandList_ClearRenderTargetView(command_list_get_current_d3d12_command_list(command_list), render_target->handles[D3D12_DESCRIPTOR_HEAP_TYPE_RTV].cpu_descriptor_handle, clear_color, 0, 0);
+    ID3D12GraphicsCommandList_ClearRenderTargetView(command_list->command_list_allocation->command_list, render_target->handles[D3D12_DESCRIPTOR_HEAP_TYPE_RTV].cpu_descriptor_handle, clear_color, 0, 0);
 }
 void command_list_set_vertex_buffer(struct Command_List* command_list, struct Buffer* vertex_buffer, size_t size, size_t stride)
 {
@@ -362,32 +394,24 @@ void command_list_set_vertex_buffer(struct Command_List* command_list, struct Bu
         .SizeInBytes = (UINT)size,
         .StrideInBytes = (UINT)stride
     };
-    ID3D12GraphicsCommandList_IASetVertexBuffers(command_list_get_current_d3d12_command_list(command_list), 0, 1, &vertex_buffer_view);
+    ID3D12GraphicsCommandList_IASetVertexBuffers(command_list->command_list_allocation->command_list, 0, 1, &vertex_buffer_view);
 }
 void command_list_set_primitive_topology(struct Command_List* command_list, enum PRIMITIVE_TOPOLOGY primitive_topology)
 {
-    ID3D12GraphicsCommandList_IASetPrimitiveTopology(command_list_get_current_d3d12_command_list(command_list), to_d3d12_primitive_topology[primitive_topology]);
+    ID3D12GraphicsCommandList_IASetPrimitiveTopology(command_list->command_list_allocation->command_list, to_d3d12_primitive_topology[primitive_topology]);
 }
 void command_list_draw_instanced(struct Command_List* command_list, size_t vertex_count_per_instance, size_t instance_count, size_t start_vertex_location, size_t start_instance_location)
 {
-    ID3D12GraphicsCommandList_DrawInstanced(command_list_get_current_d3d12_command_list(command_list), (UINT)vertex_count_per_instance, (UINT)instance_count, (UINT)start_vertex_location, (UINT)start_instance_location);
+    ID3D12GraphicsCommandList_DrawInstanced(command_list->command_list_allocation->command_list, (UINT)vertex_count_per_instance, (UINT)instance_count, (UINT)start_vertex_location, (UINT)start_instance_location);
 }
 void command_list_copy_upload_buffer_to_buffer(struct Command_List* command_list, struct Upload_Buffer* src, struct Buffer* dst)
 {
-    ID3D12GraphicsCommandList_CopyResource(command_list_get_current_d3d12_command_list(command_list), dst->resource, src->resource);
+    ID3D12GraphicsCommandList_CopyResource(command_list->command_list_allocation->command_list, dst->resource, src->resource);
 }
 int command_list_close(struct Command_List* command_list)
 {
-    ID3D12GraphicsCommandList_Close(command_list_get_current_d3d12_command_list(command_list));
+    ID3D12GraphicsCommandList_Close(command_list->command_list_allocation->command_list);
     return 0;
-}
-ID3D12CommandAllocator* command_list_get_current_d3d12_command_allocator(struct Command_List* command_list)
-{
-    return command_list->command_allocator[command_list->device->frame];
-}
-ID3D12GraphicsCommandList* command_list_get_current_d3d12_command_list(struct Command_List* command_list)
-{
-    return command_list->command_list[command_list->device->frame];
 }
 
 void descriptor_set_destroy(struct Descriptor_Set* descriptor_set);
@@ -420,10 +444,11 @@ void upload_buffer_destroy(struct Upload_Buffer* upload_buffer);
 void pipeline_state_object_destroy(struct Pipeline_State_Object* pipeline_state_object);
 
 void fence_destroy(struct Fence* fence);
-void fence_signal(struct Fence* fence, struct Command_Queue* command_queue)
+unsigned long long fence_signal(struct Fence* fence, struct Command_Queue* command_queue)
 {
     fence->value += 1;
     ID3D12CommandQueue_Signal(command_queue->command_queue, fence->fence, fence->value);
+    return fence->value;
 }
 void fence_wait_for_completion(struct Fence* fence)
 {
@@ -441,4 +466,65 @@ int fence_is_completed(struct Fence* fence)
     }
 
     return 0;
+}
+unsigned long long fence_get_completed_value(struct Fence* fence)
+{
+    return ID3D12Fence_GetCompletedValue(fence->fence);
+}
+
+struct Command_List_Allocator command_list_allocator_create(struct Device* device)
+{
+    struct Command_List_Allocator command_list_allocator = {
+        .command_lists = alloc(sizeof(struct Command_List*) * 4),
+        .command_lists_size = 4,
+        .device = device
+    };
+    device_create_fence(device, &command_list_allocator.fence);
+    return command_list_allocator;
+}
+void command_list_allocator_increment_index(struct Command_List_Allocator* command_list_allocator)
+{
+    if (command_list_allocator->command_lists_count > 0)
+        command_list_allocator->command_lists_index = (command_list_allocator->command_lists_index + 1) % command_list_allocator->command_lists_count;
+}
+struct Command_List_Allocation* command_list_allocator_alloc(struct Command_List_Allocator* command_list_allocator)
+{
+    if (!command_list_allocator->command_lists[command_list_allocator->command_lists_index])
+    { // Handle current CL not existing.
+        command_list_allocator->command_lists[command_list_allocator->command_lists_index] = device_create_command_list_allocation(command_list_allocator->device);
+        struct Command_List_Allocation* command_list = command_list_allocator->command_lists[command_list_allocator->command_lists_index];
+        command_list_allocator_increment_index(command_list_allocator);
+        command_list_allocator->command_lists_count++;
+        return command_list;
+    }
+    else
+    { // Handle current CL existing.
+        struct Command_List_Allocation* command_list = command_list_allocator->command_lists[command_list_allocator->command_lists_index];
+        if (fence_get_completed_value(command_list_allocator->fence) >= command_list->fence_value)
+        { // Handle CL being available.
+            command_list_allocator_increment_index(command_list_allocator);
+            return command_list;
+        }
+        else
+        { // Handle CL not being available.
+            command_list_allocator_increment_index(command_list_allocator);
+
+            if ((command_list_allocator->command_lists_count) == command_list_allocator->command_lists_size)
+            { // Handle growing the command_lists buffer.
+                struct Command_List_Allocation** new_buffer = alloc(sizeof(struct Command_List_Allocation*) * command_list_allocator->command_lists_size * 2);
+                memcpy(new_buffer, command_list_allocator->command_lists, sizeof(struct Command_List_Allocation*) * command_list_allocator->command_lists_size);
+                command_list_allocator->command_lists_size *= 2;
+                free(command_list_allocator->command_lists);
+                command_list_allocator->command_lists = new_buffer;
+            }
+            
+            if (command_list_allocator->command_lists[command_list_allocator->command_lists_index])
+            {
+                memmove(command_list_allocator->command_lists + command_list_allocator->command_lists_index + 1, command_list_allocator->command_lists + command_list_allocator->command_lists_index, sizeof(struct Command_List_Allocation*) * command_list_allocator->command_lists_count - command_list_allocator->command_lists_index);
+                command_list_allocator->command_lists[command_list_allocator->command_lists_index] = 0;
+            }
+
+            return command_list_allocator_alloc(command_list_allocator);
+        }
+    }
 }
