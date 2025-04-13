@@ -71,7 +71,7 @@ int CALLBACK WinMain(HINSTANCE CurrentInstance, HINSTANCE PrevInstance, LPSTR Co
     struct Descriptor_Set* cbv_srv_uav_descriptor_set = 0;
     device_create_descriptor_set(device, DESCRIPTOR_TYPE_CBV_SRV_UAV, 2048, &cbv_srv_uav_descriptor_set);
 
-    struct Buffer** backbuffers = malloc(sizeof(struct Buffer*) * swapchain->swapchain_descriptor.backbuffer_count);
+    struct Buffer** backbuffers = _alloca(sizeof(struct Buffer*) * swapchain->swapchain_descriptor.backbuffer_count);
     swapchain_create_backbuffers(swapchain, device, rtv_descriptor_set, backbuffers);
     
     struct Shader* shader = 0;
@@ -189,8 +189,6 @@ int CALLBACK WinMain(HINSTANCE CurrentInstance, HINSTANCE PrevInstance, LPSTR Co
         command_list_set_render_targets(command_list, &backbuffer, 1, 0);
         float clear_color[4] = {0.1f, 0.1f, 0.1f, 1.0f};
         command_list_clear_render_target(command_list, backbuffer, clear_color);
-        // struct Buffer shit = {0};
-        // shit.resource = upload_buffer->resource;
         command_list_set_vertex_buffer(command_list, vertex_buffer, sizeof(vertices), 5 * sizeof(float));
         command_list_set_primitive_topology(command_list, PRIMITIVE_TOPOLOGY_TRIANGLELIST);
         command_list_draw_instanced(command_list, 3, 1, 0, 0);
