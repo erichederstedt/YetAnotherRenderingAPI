@@ -31,6 +31,16 @@ void mutex_destroy(Mutex* mutex);
 #define ID3DBlob_GetBufferPointer(self) ((self)->lpVtbl->GetBufferPointer(self))
 #define ID3DBlob_GetBufferSize(self) ((self)->lpVtbl->GetBufferSize(self))
 
+struct Accessed_Object
+{
+    void* object;
+};
+#define ACCESSED_OBJECT(object) (struct Accessed_Object){ (void*)object }
+int accessed_object_get_releasable_object_count(struct Accessed_Object accessed_object);
+unsigned long long accessed_object_get_last_fence_value(struct Accessed_Object accessed_object);
+void accessed_object_set_last_fence_value(struct Accessed_Object accessed_object, unsigned long long last_fence_value);
+IUnknown** accessed_object_get_releasable_object(struct Accessed_Object accessed_object, int index);
+
 struct Command_List_Allocation
 {
     ID3D12CommandAllocator* command_allocator;
@@ -46,7 +56,6 @@ struct Command_List_Allocator
     size_t command_lists_index;
 
     struct Device* device;
-    struct Fence* fence;
 };
 struct Device
 {
@@ -54,6 +63,10 @@ struct Device
     IDXGIFactory2* factory;
     struct Command_List_Allocator command_list_allocator;
     Mutex mutex;
+    struct Fence* main_fence;
+    struct Accessed_Object* destroyed_objects;
+    size_t destroyed_objects_size;
+    size_t destroyed_objects_count;
 };
 struct Command_Queue
 {
@@ -76,20 +89,26 @@ struct Buffer_State
 struct Command_List
 {
     struct Command_List_Allocation* command_list_allocation;
-
+    
     struct Buffer_State* buffer_states;
     size_t buffer_states_size;
     size_t buffer_states_count;
     struct Buffer_State* required_buffer_states;
     size_t required_buffer_states_size;
     size_t required_buffer_states_count;
+
+    struct Accessed_Object* accessed_objects;
+    size_t accessed_objects_size;
+    size_t accessed_objects_count;
     
     struct Device* device;
-    unsigned long long fence_value;
 };
 struct Descriptor_Set
 {
+    int releasable_objects;
     ID3D12DescriptorHeap* descriptor_heap;
+    unsigned long long last_used_fence_value;
+
     unsigned int descriptor_count;
     unsigned int descriptor_size;
     D3D12_DESCRIPTOR_HEAP_TYPE descriptor_heap_type;
@@ -101,29 +120,43 @@ struct Descriptor_Handle
 };
 struct Buffer
 {
+    int releasable_objects;
     ID3D12Resource* resource;
+    unsigned long long last_used_fence_value;
+
     struct Descriptor_Handle handles[D3D12_DESCRIPTOR_HEAP_TYPE_NUM_TYPES];
     enum RESOURCE_STATES last_known_state;
+    struct Device* device;
 };
 struct Upload_Buffer
 {
+    int releasable_objects;
     ID3D12Resource* resource;
+    unsigned long long last_used_fence_value;
+
     D3D12_VERTEX_BUFFER_VIEW vertex_buffer_view;
 };
 struct Shader
 {
+    int releasable_objects;
     ID3D12RootSignature* root_signature;
     ID3DBlob* signature_blob;
     ID3DBlob* vs_code_blob;
     ID3DBlob* ps_code_blob;
+    unsigned long long last_used_fence_value;
 };
 struct Pipeline_State_Object
 {
+    int releasable_objects;
     ID3D12PipelineState* pipeline_state_object;
+    unsigned long long last_used_fence_value;
 };
 struct Fence
 {
+    int releasable_objects;
     ID3D12Fence* fence;
+    unsigned long long last_used_fence_value;
+
     unsigned long long value;
     HANDLE event;
 };
@@ -168,11 +201,15 @@ static enum RESOURCE_STATE to_d3d12_resource_state[_RESOURCE_STATE_COUNT] = {
 };
 
 struct Command_List_Allocation* device_create_command_list_allocation(struct Device* device);
+void device_release_destroyed_objects(struct Device* device);
+void device_append_destroyed_objects(struct Device* device, struct Accessed_Object accessed_object);
+void device_pop_destroyed_objects(struct Device* device, size_t pop_count);
 
 struct Descriptor_Handle descriptor_set_alloc(struct Descriptor_Set* descriptor_set);
 
 void command_list_append_buffer_state(struct Command_List* command_list, struct Buffer_State buffer_state);
 void command_list_append_required_buffer_state(struct Command_List* command_list, struct Buffer_State buffer_state);
+void command_list_append_accessed_buffers(struct Command_List* command_list, struct Accessed_Object buffer);
 
 struct Command_List_Allocator command_list_allocator_create(struct Device* device);
 void command_list_allocator_increment_index(struct Command_List_Allocator* command_list_allocator);
