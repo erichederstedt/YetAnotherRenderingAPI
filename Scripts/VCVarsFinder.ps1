@@ -1,3 +1,5 @@
+# https://github.com/erichederstedt/VCVarsFinder
+
 # Path to vswhere
 $vswhere = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe"
 
