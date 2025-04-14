@@ -105,36 +105,13 @@ int CALLBACK WinMain(HINSTANCE CurrentInstance, HINSTANCE PrevInstance, LPSTR Co
     };
     device_create_buffer(device, buffer_description, &vertex_buffer);
 
-    // for (size_t i = 0; i < 5; i++) 
     {
         struct Command_List* upload_command_list = 0;
         device_create_command_list(device, &upload_command_list);
 
         command_list_reset(upload_command_list);
 
-        D3D12_RESOURCE_BARRIER RenderBarrier1[] = {
-            {
-                .Type = D3D12_RESOURCE_BARRIER_TYPE_TRANSITION,
-                .Flags = D3D12_RESOURCE_BARRIER_FLAG_NONE,
-                .Transition.pResource = vertex_buffer->resource,
-                .Transition.StateBefore = D3D12_RESOURCE_STATE_GENERIC_READ,
-                .Transition.StateAfter = D3D12_RESOURCE_STATE_COPY_DEST
-            },
-        };
-        ID3D12GraphicsCommandList_ResourceBarrier(upload_command_list->command_list_allocation->command_list, ARRAY_COUNT(RenderBarrier1), RenderBarrier1);
-
         command_list_copy_upload_buffer_to_buffer(upload_command_list, upload_buffer, vertex_buffer);
-
-        D3D12_RESOURCE_BARRIER RenderBarrier2[] = {
-            {
-                .Type = D3D12_RESOURCE_BARRIER_TYPE_TRANSITION,
-                .Flags = D3D12_RESOURCE_BARRIER_FLAG_NONE,
-                .Transition.pResource = vertex_buffer->resource,
-                .Transition.StateBefore = D3D12_RESOURCE_STATE_COPY_DEST,
-                .Transition.StateAfter = D3D12_RESOURCE_STATE_GENERIC_READ
-            },
-        };
-        ID3D12GraphicsCommandList_ResourceBarrier(upload_command_list->command_list_allocation->command_list, ARRAY_COUNT(RenderBarrier2), RenderBarrier2);
 
         command_list_close(upload_command_list);
 
@@ -176,16 +153,6 @@ int CALLBACK WinMain(HINSTANCE CurrentInstance, HINSTANCE PrevInstance, LPSTR Co
         command_list_set_viewport(command_list, viewport);
         command_list_set_scissor_rect(command_list, scissor_rect);
         
-        
-        D3D12_RESOURCE_BARRIER RenderBarrier = {
-            .Type = D3D12_RESOURCE_BARRIER_TYPE_TRANSITION,
-            .Flags = D3D12_RESOURCE_BARRIER_FLAG_NONE,
-            .Transition.pResource = backbuffer->resource,
-            .Transition.StateBefore = D3D12_RESOURCE_STATE_PRESENT,
-            .Transition.StateAfter = D3D12_RESOURCE_STATE_RENDER_TARGET
-        };
-        ID3D12GraphicsCommandList_ResourceBarrier(command_list->command_list_allocation->command_list, 1, &RenderBarrier);
-        
         command_list_set_render_targets(command_list, &backbuffer, 1, 0);
         float clear_color[4] = {0.1f, 0.1f, 0.1f, 1.0f};
         command_list_clear_render_target(command_list, backbuffer, clear_color);
@@ -193,14 +160,7 @@ int CALLBACK WinMain(HINSTANCE CurrentInstance, HINSTANCE PrevInstance, LPSTR Co
         command_list_set_primitive_topology(command_list, PRIMITIVE_TOPOLOGY_TRIANGLELIST);
         command_list_draw_instanced(command_list, 3, 1, 0, 0);
         
-        D3D12_RESOURCE_BARRIER PresentBarrier = {
-            .Type = D3D12_RESOURCE_BARRIER_TYPE_TRANSITION,
-            .Flags = D3D12_RESOURCE_BARRIER_FLAG_NONE,
-            .Transition.pResource = backbuffer->resource,
-            .Transition.StateBefore = D3D12_RESOURCE_STATE_RENDER_TARGET,
-            .Transition.StateAfter = D3D12_RESOURCE_STATE_PRESENT
-        };
-        ID3D12GraphicsCommandList_ResourceBarrier(command_list->command_list_allocation->command_list, 1, &PresentBarrier);
+        command_list_set_buffer_state(command_list, backbuffer, RESOURCE_STATE_PRESENT);
         command_list_close(command_list);
 
         command_queue_execute(command_queue, &command_list, 1);

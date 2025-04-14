@@ -27,6 +27,7 @@ struct Command_List_Allocation
     ID3D12CommandAllocator* command_allocator;
     ID3D12GraphicsCommandList* command_list;
     unsigned long long fence_value;
+    int is_allocated;
 };
 struct Command_List_Allocator
 {
@@ -58,9 +59,21 @@ struct Swapchain
     int frame;
     struct Command_Queue* command_queue;
 };
+struct Buffer_State
+{
+    struct Buffer* buffer;
+    enum RESOURCE_STATE state;
+};
 struct Command_List
 {
     struct Command_List_Allocation* command_list_allocation;
+
+    struct Buffer_State* buffer_states;
+    size_t buffer_states_size;
+    size_t buffer_states_count;
+    struct Buffer_State* required_buffer_states;
+    size_t required_buffer_states_size;
+    size_t required_buffer_states_count;
     
     struct Device* device;
     unsigned long long fence_value;
@@ -81,6 +94,7 @@ struct Buffer
 {
     ID3D12Resource* resource;
     struct Descriptor_Handle handles[D3D12_DESCRIPTOR_HEAP_TYPE_NUM_TYPES];
+    enum RESOURCE_STATES last_known_state;
 };
 struct Upload_Buffer
 {
@@ -128,10 +142,28 @@ static enum DESCRIPTOR_TYPE to_yara_descriptor_type[D3D12_DESCRIPTOR_HEAP_TYPE_N
     DESCRIPTOR_TYPE_RTV,
     DESCRIPTOR_TYPE_DSV
 };
+static enum RESOURCE_STATE to_d3d12_resource_state[_RESOURCE_STATE_COUNT] = {
+    D3D12_RESOURCE_STATE_COMMON,
+    
+    D3D12_RESOURCE_STATE_VERTEX_AND_CONSTANT_BUFFER,
+    D3D12_RESOURCE_STATE_INDEX_BUFFER,
+    D3D12_RESOURCE_STATE_VERTEX_AND_CONSTANT_BUFFER,
+    D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE | D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE,
+
+    D3D12_RESOURCE_STATE_RENDER_TARGET,
+    D3D12_RESOURCE_STATE_UNORDERED_ACCESS,
+    D3D12_RESOURCE_STATE_DEPTH_WRITE,
+    D3D12_RESOURCE_STATE_COPY_DEST,
+
+    D3D12_RESOURCE_STATE_PRESENT,
+};
 
 struct Command_List_Allocation* device_create_command_list_allocation(struct Device* device);
 
 struct Descriptor_Handle descriptor_set_alloc(struct Descriptor_Set* descriptor_set);
+
+void command_list_append_buffer_state(struct Command_List* command_list, struct Buffer_State buffer_state);
+void command_list_append_required_buffer_state(struct Command_List* command_list, struct Buffer_State buffer_state);
 
 struct Command_List_Allocator command_list_allocator_create(struct Device* device);
 void command_list_allocator_increment_index(struct Command_List_Allocator* command_list_allocator);

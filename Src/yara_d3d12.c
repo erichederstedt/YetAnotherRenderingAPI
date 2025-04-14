@@ -89,12 +89,10 @@ int device_create_command_list(struct Device* device, struct Command_List** out_
 {
     *out_command_list = alloc(sizeof(struct Command_List));
 
-    // for (size_t i = 0; i < BACKBUFFER_COUNT; i++)
-    // {
-    //     ID3D12Device_CreateCommandAllocator(device->device, D3D12_COMMAND_LIST_TYPE_DIRECT, &IID_ID3D12CommandAllocator, &(*out_command_list)->command_allocator[i]);
-    //     ID3D12Device_CreateCommandList(device->device, 0, D3D12_COMMAND_LIST_TYPE_DIRECT, (*out_command_list)->command_allocator[i], 0, &IID_ID3D12CommandList, &(*out_command_list)->command_list[i]);
-    //     ID3D12GraphicsCommandList_Close((*out_command_list)->command_list[i]);
-    // }
+    (*out_command_list)->buffer_states_size = 16;
+    (*out_command_list)->buffer_states = alloc(sizeof(struct Buffer_State) * (*out_command_list)->buffer_states_size);
+    (*out_command_list)->required_buffer_states_size = 16;
+    (*out_command_list)->required_buffer_states = alloc(sizeof(struct Buffer_State) * (*out_command_list)->required_buffer_states_size);
     
     (*out_command_list)->device = device;
 
@@ -169,7 +167,8 @@ int device_create_buffer(struct Device* device, struct Buffer_Descriptor buffer_
     if (dsv)
         resource_desc.Flags |= D3D12_RESOURCE_FLAG_ALLOW_DEPTH_STENCIL;
     
-    ID3D12Device_CreateCommittedResource(device->device, &defaultHeapProperties, D3D12_HEAP_FLAG_NONE, &resource_desc, D3D12_RESOURCE_STATE_GENERIC_READ, 0, &IID_ID3D12Resource, &(*out_buffer)->resource);
+    ID3D12Device_CreateCommittedResource(device->device, &defaultHeapProperties, D3D12_HEAP_FLAG_NONE, &resource_desc, to_d3d12_resource_state[RESOURCE_STATE_COPY_DEST], 0, &IID_ID3D12Resource, &(*out_buffer)->resource);
+    (*out_buffer)->last_known_state = RESOURCE_STATE_COPY_DEST;
     
     for (size_t i = 0; i < buffer_description.descriptor_sets_count; i++)
     {
@@ -286,19 +285,62 @@ int device_create_fence(struct Device* device, struct Fence** out_fence)
 void command_queue_destroy(struct Command_Queue* command_queue);
 void command_queue_execute(struct Command_Queue* command_queue, struct Command_List* command_lists[], size_t command_lists_count)
 {
-    ID3D12CommandList** d3d12_command_lists = _alloca(sizeof(ID3D12CommandList*) * command_lists_count);
+    ID3D12CommandList** d3d12_command_lists = _alloca(sizeof(ID3D12CommandList*) * (command_lists_count * 2));
+
+    struct Command_List_Allocation** resource_barrier_command_lists = _alloca(sizeof(struct Command_List_Allocation*) * command_lists_count);
+    size_t resource_barrier_command_lists_count = 0;
+
+    size_t command_lists_to_execute = 0;
     for (size_t i = 0; i < command_lists_count; i++)
     {
-        d3d12_command_lists[i] = (ID3D12CommandList*)command_lists[i]->command_list_allocation->command_list;
+        struct Command_List* command_list = command_lists[i];
+
+        if(command_list->required_buffer_states_count > 0)
+        { // Process requried resource barriers
+            struct Command_List_Allocation* resource_barrier_command_list = command_list_allocator_alloc(&command_queue->device->command_list_allocator);
+            ID3D12CommandAllocator_Reset(resource_barrier_command_list->command_allocator);
+            ID3D12GraphicsCommandList_Reset(resource_barrier_command_list->command_list, resource_barrier_command_list->command_allocator, 0);
+
+            for (size_t j = 0; j < command_list->required_buffer_states_count; j++)
+            {
+                struct Buffer* buffer = command_list->required_buffer_states[j].buffer;
+                enum RESOURCE_STATE to_state = command_list->required_buffer_states[j].state;
+
+                if (buffer->last_known_state == to_state)
+                    continue;
+
+                D3D12_RESOURCE_BARRIER resource_barrier = {
+                    .Type = D3D12_RESOURCE_BARRIER_TYPE_TRANSITION,
+                    .Flags = D3D12_RESOURCE_BARRIER_FLAG_NONE,
+                    .Transition.pResource = buffer->resource,
+                    .Transition.StateBefore = to_d3d12_resource_state[buffer->last_known_state],
+                    .Transition.StateAfter = to_d3d12_resource_state[to_state]
+                };
+                ID3D12GraphicsCommandList_ResourceBarrier(resource_barrier_command_list->command_list, 1, &resource_barrier);
+                buffer->last_known_state = to_state;
+            }
+
+            ID3D12GraphicsCommandList_Close(resource_barrier_command_list->command_list);
+            d3d12_command_lists[command_lists_to_execute++] = (ID3D12CommandList*)resource_barrier_command_list->command_list;
+            resource_barrier_command_lists[resource_barrier_command_lists_count++] = resource_barrier_command_list;
+        }
+
+        d3d12_command_lists[command_lists_to_execute++] = (ID3D12CommandList*)command_list->command_list_allocation->command_list;
     }
     
-    ID3D12CommandQueue_ExecuteCommandLists(command_queue->command_queue, (UINT)command_lists_count, d3d12_command_lists);
+    ID3D12CommandQueue_ExecuteCommandLists(command_queue->command_queue, (UINT)command_lists_to_execute, d3d12_command_lists);
 
     unsigned long long fence_value = fence_signal(command_queue->device->command_list_allocator.fence, command_queue);
     for (size_t i = 0; i < command_lists_count; i++)
     {
         command_lists[i]->command_list_allocation->fence_value = fence_value;
+        command_lists[i]->command_list_allocation->is_allocated = 0;
         command_lists[i]->command_list_allocation = 0;
+    }
+    for (size_t i = 0; i < resource_barrier_command_lists_count; i++)
+    {
+        resource_barrier_command_lists[i]->fence_value = fence_value;
+        resource_barrier_command_lists[i]->is_allocated = 0;
     }
 }
 
@@ -313,6 +355,7 @@ int swapchain_create_backbuffers(struct Swapchain* swapchain, struct Device* dev
         struct Buffer* buffer = out_buffers[i];
 
         buffer->handles[D3D12_DESCRIPTOR_HEAP_TYPE_RTV] = descriptor_set_alloc(rtv_descriptor_set);
+        buffer->last_known_state = RESOURCE_STATE_PRESENT;
 
         IDXGISwapChain3_GetBuffer(swapchain->swapchain, i, &IID_ID3D12Resource, &buffer->resource);
         ID3D12Device_CreateRenderTargetView(device->device, buffer->resource, 0, buffer->handles[D3D12_DESCRIPTOR_HEAP_TYPE_RTV].cpu_descriptor_handle);
@@ -326,7 +369,7 @@ int swapchain_get_current_backbuffer_index(struct Swapchain* swapchain)
 }
 int swapchain_present(struct Swapchain* swapchain)
 {
-    IDXGISwapChain3_Present(swapchain->swapchain, 1, 0);
+    IDXGISwapChain3_Present(swapchain->swapchain, 0, 0); // DXGI_PRESENT_ALLOW_TEARING
 
     int next_frame_index = (swapchain->frame + 1) % swapchain->swapchain_descriptor.backbuffer_count;
     fence_signal(swapchain->fences[swapchain->frame], swapchain->command_queue);
@@ -378,6 +421,7 @@ void command_list_set_render_targets(struct Command_List* command_list, struct B
     D3D12_CPU_DESCRIPTOR_HANDLE* handles = _alloca(sizeof(D3D12_CPU_DESCRIPTOR_HANDLE) * render_targets_count);
     for (int i = 0; i < render_targets_count; i++)
     {
+        command_list_set_buffer_state(command_list, render_targets[i], RESOURCE_STATE_RENDER_TARGET);
         handles[i] = render_targets[i]->handles[D3D12_DESCRIPTOR_HEAP_TYPE_RTV].cpu_descriptor_handle;
     }
     
@@ -385,10 +429,12 @@ void command_list_set_render_targets(struct Command_List* command_list, struct B
 }
 void command_list_clear_render_target(struct Command_List* command_list, struct Buffer* render_target, float clear_color[4])
 {
+    command_list_set_buffer_state(command_list, render_target, RESOURCE_STATE_RENDER_TARGET);
     ID3D12GraphicsCommandList_ClearRenderTargetView(command_list->command_list_allocation->command_list, render_target->handles[D3D12_DESCRIPTOR_HEAP_TYPE_RTV].cpu_descriptor_handle, clear_color, 0, 0);
 }
 void command_list_set_vertex_buffer(struct Command_List* command_list, struct Buffer* vertex_buffer, size_t size, size_t stride)
 {
+    command_list_set_buffer_state(command_list, vertex_buffer, RESOURCE_STATE_VERTEX_BUFFER);
     D3D12_VERTEX_BUFFER_VIEW vertex_buffer_view = {
         .BufferLocation = ID3D12Resource_GetGPUVirtualAddress(vertex_buffer->resource),
         .SizeInBytes = (UINT)size,
@@ -406,12 +452,70 @@ void command_list_draw_instanced(struct Command_List* command_list, size_t verte
 }
 void command_list_copy_upload_buffer_to_buffer(struct Command_List* command_list, struct Upload_Buffer* src, struct Buffer* dst)
 {
+    command_list_set_buffer_state(command_list, dst, RESOURCE_STATE_COPY_DEST);
     ID3D12GraphicsCommandList_CopyResource(command_list->command_list_allocation->command_list, dst->resource, src->resource);
+}
+void command_list_set_buffer_state(struct Command_List* command_list, struct Buffer* buffer, enum RESOURCE_STATE to_state)
+{
+    int buffer_state_index = -1;
+    for (int i = 0; i < command_list->buffer_states_count; i++)
+    {
+        if (command_list->buffer_states[i].buffer == buffer)
+        {
+            buffer_state_index = i;
+            break;
+        }
+    }
+    if (buffer_state_index == -1)
+    { // Handle buffer not being registered.
+        command_list_append_required_buffer_state(command_list, (struct Buffer_State){ buffer, to_state });
+        command_list_append_buffer_state(command_list, (struct Buffer_State){ buffer, to_state });
+        return;
+    }
+    
+    if (command_list->buffer_states[buffer_state_index].state == to_state)
+        return;
+    
+    D3D12_RESOURCE_BARRIER resource_barriers[] = {
+        {
+            .Type = D3D12_RESOURCE_BARRIER_TYPE_TRANSITION,
+            .Flags = D3D12_RESOURCE_BARRIER_FLAG_NONE,
+            .Transition.pResource = buffer->resource,
+            .Transition.StateBefore = to_d3d12_resource_state[command_list->buffer_states[buffer_state_index].state],
+            .Transition.StateAfter = to_d3d12_resource_state[to_state]
+        }
+    };
+    ID3D12GraphicsCommandList_ResourceBarrier(command_list->command_list_allocation->command_list, ARRAY_COUNT(resource_barriers), resource_barriers);
+    command_list->buffer_states[buffer_state_index].state = to_state;
 }
 int command_list_close(struct Command_List* command_list)
 {
     ID3D12GraphicsCommandList_Close(command_list->command_list_allocation->command_list);
     return 0;
+}
+void command_list_append_buffer_state(struct Command_List* command_list, struct Buffer_State buffer_state)
+{
+    if(command_list->buffer_states_count == command_list->buffer_states_size)
+    {
+        struct Buffer_State* new_buffer = alloc(sizeof(struct Buffer_State) * command_list->buffer_states_size * 2);
+        memcpy(new_buffer, command_list->buffer_states, sizeof(struct Buffer_State) * command_list->buffer_states_size);
+        command_list->buffer_states = new_buffer;
+        command_list->buffer_states_size *= 2;
+    }
+
+    command_list->buffer_states[command_list->buffer_states_count++] = buffer_state;
+}
+void command_list_append_required_buffer_state(struct Command_List* command_list, struct Buffer_State buffer_state)
+{
+    if(command_list->required_buffer_states_count == command_list->required_buffer_states_size)
+    {
+        struct Buffer_State* new_buffer = alloc(sizeof(struct Buffer_State) * command_list->required_buffer_states_size * 2);
+        memcpy(new_buffer, command_list->required_buffer_states, sizeof(struct Buffer_State) * command_list->required_buffer_states_size);
+        command_list->required_buffer_states = new_buffer;
+        command_list->required_buffer_states_size *= 2;
+    }
+
+    command_list->required_buffer_states[command_list->required_buffer_states_count++] = buffer_state;
 }
 
 void descriptor_set_destroy(struct Descriptor_Set* descriptor_set);
@@ -495,13 +599,15 @@ struct Command_List_Allocation* command_list_allocator_alloc(struct Command_List
         struct Command_List_Allocation* command_list = command_list_allocator->command_lists[command_list_allocator->command_lists_index];
         command_list_allocator_increment_index(command_list_allocator);
         command_list_allocator->command_lists_count++;
+        command_list->is_allocated = 1;
         return command_list;
     }
     else
     { // Handle current CL existing.
         struct Command_List_Allocation* command_list = command_list_allocator->command_lists[command_list_allocator->command_lists_index];
-        if (fence_get_completed_value(command_list_allocator->fence) >= command_list->fence_value)
+        if (fence_get_completed_value(command_list_allocator->fence) >= command_list->fence_value && command_list->is_allocated == 0)
         { // Handle CL being available.
+            command_list->is_allocated = 1;
             command_list_allocator_increment_index(command_list_allocator);
             return command_list;
         }
@@ -520,7 +626,7 @@ struct Command_List_Allocation* command_list_allocator_alloc(struct Command_List
             
             if (command_list_allocator->command_lists[command_list_allocator->command_lists_index])
             {
-                memmove(command_list_allocator->command_lists + command_list_allocator->command_lists_index + 1, command_list_allocator->command_lists + command_list_allocator->command_lists_index, sizeof(struct Command_List_Allocation*) * command_list_allocator->command_lists_count - command_list_allocator->command_lists_index);
+                memmove(command_list_allocator->command_lists + command_list_allocator->command_lists_index + 1, command_list_allocator->command_lists + command_list_allocator->command_lists_index, sizeof(struct Command_List_Allocation*) * (command_list_allocator->command_lists_count - command_list_allocator->command_lists_index));
                 command_list_allocator->command_lists[command_list_allocator->command_lists_index] = 0;
             }
 

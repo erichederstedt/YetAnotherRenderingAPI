@@ -36,6 +36,23 @@ enum BUFFER_TYPE
     BUFFER_TYPE_BUFFER,
     BUFFER_TYPE_TEXTRUE2D
 };
+enum RESOURCE_STATE
+{
+    RESOURCE_STATE_UNKNOWN,
+    // READ
+    RESOURCE_STATE_VERTEX_BUFFER,
+    RESOURCE_STATE_INDEX_BUFFER,
+    RESOURCE_STATE_CONSTANT_BUFFER,
+    RESOURCE_STATE_STRUCTURED_BUFFER,
+    // WRITE
+    RESOURCE_STATE_RENDER_TARGET,
+    RESOURCE_STATE_UNORDERED_ACCESS,
+    RESOURCE_STATE_DEPTH,
+    RESOURCE_STATE_COPY_DEST,
+    // SPECIAL
+    RESOURCE_STATE_PRESENT,
+    _RESOURCE_STATE_COUNT
+};
 
 struct Device;
 struct Command_Queue;
@@ -112,6 +129,7 @@ void command_list_set_vertex_buffer(struct Command_List* command_list, struct Bu
 void command_list_set_primitive_topology(struct Command_List* command_list, enum PRIMITIVE_TOPOLOGY primitive_topology);
 void command_list_draw_instanced(struct Command_List* command_list, size_t vertex_count_per_instance, size_t instance_count, size_t start_vertex_location, size_t start_instance_location);
 void command_list_copy_upload_buffer_to_buffer(struct Command_List* command_list, struct Upload_Buffer* src, struct Buffer* dst);
+void command_list_set_buffer_state(struct Command_List* command_list, struct Buffer* buffer, enum RESOURCE_STATE to_state);
 int command_list_close(struct Command_List* command_list);
 
 void descriptor_set_destroy(struct Descriptor_Set* descriptor_set);
