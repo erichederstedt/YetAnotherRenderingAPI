@@ -14,6 +14,15 @@
 
 void* alloc(size_t size);
 
+typedef struct Mutex
+{
+    HANDLE mutex;
+} Mutex;
+Mutex mutex_create();
+void mutex_lock(Mutex* mutex);
+void mutex_unlock(Mutex* mutex);
+void mutex_destroy(Mutex* mutex);
+
 #define ARRAY_COUNT(Array) (sizeof(Array)/sizeof((Array)[0]))
 // #define BACKBUFFER_COUNT 2
 #define ID3DBlob_QueryInterface(self, riid, ppvObject) ((self)->lpVtbl->QueryInterface(self, riid, ppvObject))
@@ -43,8 +52,8 @@ struct Device
 {
     ID3D12Device* device;
     IDXGIFactory2* factory;
-    int frame;
     struct Command_List_Allocator command_list_allocator;
+    Mutex mutex;
 };
 struct Command_Queue
 {

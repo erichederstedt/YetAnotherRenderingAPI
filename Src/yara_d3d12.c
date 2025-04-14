@@ -14,6 +14,33 @@ void* alloc(size_t size)
     return allocation;
 }
 
+Mutex mutex_create()
+{
+    struct Mutex mutex = {
+        .mutex = CreateMutex(NULL, FALSE, NULL)
+    };
+    return mutex;
+}
+void mutex_lock(Mutex* mutex)
+{
+    DWORD waitResult = WaitForSingleObject(mutex->mutex, INFINITE);
+    if (waitResult != WAIT_OBJECT_0)
+    {
+        exit(-1);
+    }
+}
+void mutex_unlock(Mutex* mutex)
+{
+    if (!ReleaseMutex(mutex->mutex))
+    {
+        exit(-1);
+    }
+}
+void mutex_destroy(Mutex* mutex)
+{
+    CloseHandle(mutex->mutex);
+}
+
 int device_create(struct Device** out_device)
 {
     *out_device = alloc(sizeof(struct Device));
@@ -26,6 +53,7 @@ int device_create(struct Device** out_device)
     CreateDXGIFactory2(0, &IID_IDXGIFactory2, &(*out_device)->factory);
 
     (*out_device)->command_list_allocator = command_list_allocator_create(*out_device);
+    (*out_device)->mutex = mutex_create();
 
     return 0;
 }
@@ -290,6 +318,7 @@ int device_create_fence(struct Device* device, struct Fence** out_fence)
 void command_queue_destroy(struct Command_Queue* command_queue);
 void command_queue_execute(struct Command_Queue* command_queue, struct Command_List* command_lists[], size_t command_lists_count)
 {
+    mutex_lock(&command_queue->device->mutex);
     ID3D12CommandList** d3d12_command_lists = _alloca(sizeof(ID3D12CommandList*) * (command_lists_count * 2));
 
     struct Command_List_Allocation** resource_barrier_command_lists = _alloca(sizeof(struct Command_List_Allocation*) * command_lists_count);
@@ -334,7 +363,7 @@ void command_queue_execute(struct Command_Queue* command_queue, struct Command_L
     }
     
     ID3D12CommandQueue_ExecuteCommandLists(command_queue->command_queue, (UINT)command_lists_to_execute, d3d12_command_lists);
-
+    
     unsigned long long fence_value = fence_signal(command_queue->device->command_list_allocator.fence, command_queue);
     for (size_t i = 0; i < command_lists_count; i++)
     {
@@ -347,6 +376,7 @@ void command_queue_execute(struct Command_Queue* command_queue, struct Command_L
         resource_barrier_command_lists[i]->fence_value = fence_value;
         resource_barrier_command_lists[i]->is_allocated = 0;
     }
+    mutex_unlock(&command_queue->device->mutex);
 }
 
 void swapchain_destroy(struct Swapchain* swapchain);
@@ -598,6 +628,7 @@ void command_list_allocator_increment_index(struct Command_List_Allocator* comma
 }
 struct Command_List_Allocation* command_list_allocator_alloc(struct Command_List_Allocator* command_list_allocator)
 {
+    mutex_lock(&command_list_allocator->device->mutex);
     if (!command_list_allocator->command_lists[command_list_allocator->command_lists_index])
     { // Handle current CL not existing.
         command_list_allocator->command_lists[command_list_allocator->command_lists_index] = device_create_command_list_allocation(command_list_allocator->device);
@@ -605,6 +636,7 @@ struct Command_List_Allocation* command_list_allocator_alloc(struct Command_List
         command_list_allocator_increment_index(command_list_allocator);
         command_list_allocator->command_lists_count++;
         command_list->is_allocated = 1;
+        mutex_unlock(&command_list_allocator->device->mutex);
         return command_list;
     }
     else
@@ -614,6 +646,7 @@ struct Command_List_Allocation* command_list_allocator_alloc(struct Command_List
         { // Handle CL being available.
             command_list->is_allocated = 1;
             command_list_allocator_increment_index(command_list_allocator);
+            mutex_unlock(&command_list_allocator->device->mutex);
             return command_list;
         }
         else
@@ -635,6 +668,7 @@ struct Command_List_Allocation* command_list_allocator_alloc(struct Command_List
                 command_list_allocator->command_lists[command_list_allocator->command_lists_index] = 0;
             }
 
+            mutex_unlock(&command_list_allocator->device->mutex);
             return command_list_allocator_alloc(command_list_allocator);
         }
     }
