@@ -7,7 +7,7 @@ Here is the status of some notable things being worked on.
 | Automatically sync command lists  | :heavy_check_mark: |
 | Automatically sync presents  | :heavy_check_mark: |
 | Automatically sync resource states  | :heavy_check_mark: |
-| Automatically sync resource deletion | :x: |
+| Automatically sync resource deletion | :heavy_check_mark: |
 | Multithreading support  | :x: |
 | Hardware Raytracing support  | :x: |
 | PSO Caching support  | :x: |
