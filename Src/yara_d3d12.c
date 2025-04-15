@@ -556,7 +556,7 @@ void command_list_set_pipeline_state_object(struct Command_List* command_list, s
 void command_list_set_shader(struct Command_List* command_list, struct Shader* shader)
 {
     ID3D12GraphicsCommandList_SetGraphicsRootSignature(command_list->command_list_allocation->command_list, shader->root_signature);
-    command_list_append_accessed_buffers(command_list, ACCESSED_OBJECT(shader->root_signature));
+    command_list_append_accessed_buffers(command_list, ACCESSED_OBJECT(shader));
 }
 void command_list_set_viewport(struct Command_List* command_list, struct Viewport viewport)
 {
