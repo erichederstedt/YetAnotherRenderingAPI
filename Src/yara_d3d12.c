@@ -2,11 +2,12 @@
 #include "yara_d3d12.h"
 #include "dxcapi_c.h"
 
-#pragma comment( lib, "d3dcompiler.lib" )
+// #pragma comment( lib, "d3dcompiler.lib" )
 #pragma comment( lib, "d3d12.lib" )
 #pragma comment( lib, "dxgi.lib" )
 #pragma comment (lib, "dxguid.lib")
 #pragma comment (lib, "Ole32.lib")
+#pragma comment (lib, "dxcompiler.lib")
 
 #include <memory.h>
 void* alloc(size_t size)
@@ -310,6 +311,15 @@ int device_create_shader(struct Device* device, struct Shader** out_shader)
 {
     *out_shader = alloc(sizeof(struct Shader));
     (*out_shader)->releasable_objects = 5;
+
+    IDxcUtils* utils = 0;
+    IDxcCompiler3* compiler = 0;
+    IDxcIncludeHandler* includeHandler = 0;
+    
+    DxcCreateInstance(&CLSID_DxcUtils, &IID_IDxcUtils, &utils);
+    DxcCreateInstance(&CLSID_DxcCompiler, &IID_IDxcCompiler3, &compiler);
+    
+    utils->lpVtbl->CreateDefaultIncludeHandler(utils, &includeHandler);
 
     D3D12_ROOT_SIGNATURE_DESC RootSignatureDesc = {
         .NumParameters = 0,
