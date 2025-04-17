@@ -26,7 +26,11 @@
 			"yara.h": "c",
 			"yara_d3d12.h": "c",
 			"windows.h": "c",
-			"dxgi1_2.h": "c"
+			"dxgi1_2.h": "c",
+			"handmademath.h": "c",
+			"d3d12shader.h": "c",
+			"guiddef.h": "c",
+			"dxgi1_4.h": "c"
 		}
 	}
 }

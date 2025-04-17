@@ -4,7 +4,8 @@
 #pragma comment( lib, "d3dcompiler.lib" )
 #pragma comment( lib, "d3d12.lib" )
 #pragma comment( lib, "dxgi.lib" )
-#pragma comment (lib, "dxguid")
+#pragma comment (lib, "dxguid.lib")
+#pragma comment (lib, "Ole32.lib")
 
 #include <memory.h>
 void* alloc(size_t size)
@@ -55,6 +56,114 @@ void mutex_destroy(Mutex* mutex)
 {
     CloseHandle(mutex->mutex);
 }
+
+/*
+const CLSID CLSID_DxcCompiler = {
+    0x73e22d93,
+    0xe6ce,
+    0x47f3,
+    {0xb5, 0xbf, 0xf0, 0x66, 0x4f, 0x39, 0xc1, 0xb0}};
+// {EF6A8087-B0EA-4D56-9E45-D07E1A8B7806}
+const GUID CLSID_DxcLinker = {
+    0xef6a8087,
+    0xb0ea,
+    0x4d56,
+    {0x9e, 0x45, 0xd0, 0x7e, 0x1a, 0x8b, 0x78, 0x6}};
+// {CD1F6B73-2AB0-484D-8EDC-EBE7A43CA09F}
+const CLSID CLSID_DxcDiaDataSource = {
+    0xcd1f6b73,
+    0x2ab0,
+    0x484d,
+    {0x8e, 0xdc, 0xeb, 0xe7, 0xa4, 0x3c, 0xa0, 0x9f}};
+// {3E56AE82-224D-470F-A1A1-FE3016EE9F9D}
+const CLSID CLSID_DxcCompilerArgs = {
+    0x3e56ae82,
+    0x224d,
+    0x470f,
+    {0xa1, 0xa1, 0xfe, 0x30, 0x16, 0xee, 0x9f, 0x9d}};
+// {6245D6AF-66E0-48FD-80B4-4D271796748C}
+const GUID CLSID_DxcLibrary = {
+    0x6245d6af,
+    0x66e0,
+    0x48fd,
+    {0x80, 0xb4, 0x4d, 0x27, 0x17, 0x96, 0x74, 0x8c}};
+const GUID CLSID_DxcUtils = {
+        0x6245d6af,
+        0x66e0,
+        0x48fd,
+        {0x80, 0xb4, 0x4d, 0x27, 0x17, 0x96, 0x74, 0x8c}};
+// {8CA3E215-F728-4CF3-8CDD-88AF917587A1}
+const GUID CLSID_DxcValidator = {
+    0x8ca3e215,
+    0xf728,
+    0x4cf3,
+    {0x8c, 0xdd, 0x88, 0xaf, 0x91, 0x75, 0x87, 0xa1}};
+// {D728DB68-F903-4F80-94CD-DCCF76EC7151}
+const GUID CLSID_DxcAssembler = {
+    0xd728db68,
+    0xf903,
+    0x4f80,
+    {0x94, 0xcd, 0xdc, 0xcf, 0x76, 0xec, 0x71, 0x51}};
+// {b9f54489-55b8-400c-ba3a-1675e4728b91}
+const GUID CLSID_DxcContainerReflection = {
+    0xb9f54489,
+    0x55b8,
+    0x400c,
+    {0xba, 0x3a, 0x16, 0x75, 0xe4, 0x72, 0x8b, 0x91}};
+// {AE2CD79F-CC22-453F-9B6B-B124E7A5204C}
+const GUID CLSID_DxcOptimizer = {
+    0xae2cd79f,
+    0xcc22,
+    0x453f,
+    {0x9b, 0x6b, 0xb1, 0x24, 0xe7, 0xa5, 0x20, 0x4c}};
+// {94134294-411f-4574-b4d0-8741e25240d2}
+const GUID CLSID_DxcContainerBuilder = {
+    0x94134294,
+    0x411f,
+    0x4574,
+    {0xb4, 0xd0, 0x87, 0x41, 0xe2, 0x52, 0x40, 0xd2}};
+// {54621dfb-f2ce-457e-ae8c-ec355faeec7c}
+const GUID CLSID_DxcPdbUtils = {
+    0x54621dfb,
+    0xf2ce,
+    0x457e,
+    {0xae, 0x8c, 0xec, 0x35, 0x5f, 0xae, 0xec, 0x7c}};
+IID IID_IDxcBlob = {0};
+IID IID_IDxcBlobEncoding = {0};
+IID IID_IDxcIncludeHandler = {0};
+IID IID_IDxcCompiler = {0};
+IID IID_IDxcCompiler2 = {0};
+IID IID_IDxcCompiler3 = {0};
+IID IID_IDxcLinker = {0};
+IID IID_IDxcCompilerArgs = {0};
+IID IID_IDxcLibrary = {0};
+IID IID_IDxcUtils = {0};
+IID IID_IDxcValidator = {0};
+IID IID_IDxcAssembler = {0};
+IID IID_IDxcContainerReflection = {0};
+IID IID_IDxcOptimizer = {0};
+IID IID_IDxcContainerBuilder = {0};
+IID IID_IDxcPdbUtils = {0};
+void init_dxc_iids()
+{
+    IIDFromString(L"{8BA5FB08-5195-40e2-AC58-0D989C3A0102}", &IID_IDxcBlob);
+    IIDFromString(L"{7241d424-2646-4191-97c0-98e96e42fc68}", &IID_IDxcBlobEncoding);
+    IIDFromString(L"{7f61fc7d-950d-467f-b3e3-3c02fb49187c}", &IID_IDxcIncludeHandler);
+    IIDFromString(L"{8c210bf3-011f-4422-8d70-6f9acb8db617}", &IID_IDxcCompiler);
+    IIDFromString(L"{A005A9D9-B8BB-4594-B5C9-0E633BEC4D37}", &IID_IDxcCompiler2);
+    IIDFromString(L"{228B4687-5A6A-4730-900C-9702B2203F54}", &IID_IDxcCompiler3);
+    IIDFromString(L"{F1B5BE2A-62DD-4327-A1C2-42AC1E1E78E6}", &IID_IDxcLinker);
+    IIDFromString(L"{73EFFE2A-70DC-45F8-9690-EFF64C02429D}", &IID_IDxcCompilerArgs);
+    IIDFromString(L"{e5204dc7-d18c-4c3c-bdfb-851673980fe7}", &IID_IDxcLibrary);
+    IIDFromString(L"{4605C4CB-2019-492A-ADA4-65F20BB7D67F}", &IID_IDxcUtils);
+    IIDFromString(L"{A6E82BD2-1FD7-4826-9811-2857E797F49A}", &IID_IDxcValidator);
+    IIDFromString(L"{091f7a26-1c1f-4948-904b-e6e3a8a771d5}", &IID_IDxcAssembler);
+    IIDFromString(L"{d2c21b26-8350-4bdc-976a-331ce6f4c54c}", &IID_IDxcContainerReflection);
+    IIDFromString(L"{25740E2E-9CBA-401B-9119-4FB42F39F270}", &IID_IDxcOptimizer);
+    IIDFromString(L"{334b1f50-2292-4b35-99a1-25588d8c17fe}", &IID_IDxcContainerBuilder);
+    IIDFromString(L"{E6C9647E-9D6A-4C3B-B94C-524B5A6C343D}", &IID_IDxcPdbUtils);
+}
+*/
 
 int device_create(struct Device** out_device)
 {
@@ -306,7 +415,7 @@ int device_create_upload_buffer(struct Device* device, void* data, size_t data_s
 int device_create_shader(struct Device* device, struct Shader** out_shader)
 {
     *out_shader = alloc(sizeof(struct Shader));
-    (*out_shader)->releasable_objects = 4;
+    (*out_shader)->releasable_objects = 5;
 
     D3D12_ROOT_SIGNATURE_DESC RootSignatureDesc = {
         .NumParameters = 0,
@@ -318,20 +427,47 @@ int device_create_shader(struct Device* device, struct Shader** out_shader)
     D3D12SerializeRootSignature(&RootSignatureDesc, D3D_ROOT_SIGNATURE_VERSION_1_0, &(*out_shader)->signature_blob, 0);
     ID3D12Device_CreateRootSignature(device->device, 0, ID3DBlob_GetBufferPointer((*out_shader)->signature_blob),  ID3DBlob_GetBufferSize((*out_shader)->signature_blob), &IID_ID3D12RootSignature, &(*out_shader)->root_signature);
     
-    D3DCompileFromFile(L"./shader.hlsl", 0, 0, "VSMain", "vs_5_0", D3DCOMPILE_OPTIMIZATION_LEVEL3, 0, &(*out_shader)->vs_code_blob, 0);
-    D3DCompileFromFile(L"./shader.hlsl", 0, 0, "PSMain", "ps_5_0", D3DCOMPILE_OPTIMIZATION_LEVEL3, 0, &(*out_shader)->ps_code_blob, 0);
+    // D3DCompileFromFile(L"./shader.hlsl", 0, 0, "VSMain", "vs_5_0", D3DCOMPILE_OPTIMIZATION_LEVEL3, 0, &(*out_shader)->vs_code_blob, 0);
+    // D3DCompileFromFile(L"./shader.hlsl", 0, 0, "PSMain", "ps_5_0", D3DCOMPILE_OPTIMIZATION_LEVEL3, 0, &(*out_shader)->ps_code_blob, 0);
+
+    // HRESULT result = D3DReflect((*out_shader)->vs_code_blob, ID3DBlob_GetBufferSize((*out_shader)->vs_code_blob), &IID_ID3D12ShaderReflection, &(*out_shader)->reflection);
+    // result;
+
+    D3D12_SHADER_DESC shader_desc;
+    (*out_shader)->reflection->lpVtbl->GetDesc((*out_shader)->reflection, &shader_desc);
+
+    (*out_shader)->input_element_descriptors_count = shader_desc.InputParameters;
+    (*out_shader)->input_element_descriptors = alloc(sizeof(D3D12_INPUT_ELEMENT_DESC) * shader_desc.InputParameters);
+    for (UINT i = 0; i < shader_desc.InputParameters; ++i) {
+        D3D12_SIGNATURE_PARAMETER_DESC param_desc;
+        (*out_shader)->reflection->lpVtbl->GetInputParameterDesc((*out_shader)->reflection, i, &param_desc);
+
+        (*out_shader)->input_element_descriptors[i].SemanticName = param_desc.SemanticName;
+        (*out_shader)->input_element_descriptors[i].SemanticIndex = param_desc.SemanticIndex;
+    }
 
     return 0;
 }
-int device_create_pipeline_state_object(struct Device* device, struct Swapchain* swapchain, struct Shader* shader, struct Pipeline_State_Object** out_pipeline_state_object)
+int device_create_pipeline_state_object(struct Device* device, struct Swapchain* swapchain, struct Shader* shader, struct Pipeline_State_Object_Descriptor descriptor, struct Pipeline_State_Object** out_pipeline_state_object)
 {
     *out_pipeline_state_object = alloc(sizeof(struct Pipeline_State_Object));
     (*out_pipeline_state_object)->releasable_objects = 1;
 
-    D3D12_INPUT_ELEMENT_DESC InputElements[] = {
-        {"POS", 0, DXGI_FORMAT_R32G32_FLOAT, 0, 0, D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0},
-        {"COL", 0, DXGI_FORMAT_R32G32B32_FLOAT, 0, D3D12_APPEND_ALIGNED_ELEMENT, D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0},
-    };
+    D3D12_INPUT_ELEMENT_DESC* input_elements = _alloca(descriptor.input_element_descriptors_count);
+    for (unsigned int i = 0; i < descriptor.input_element_descriptors_count; i++)
+    {
+        input_elements[i] = (D3D12_INPUT_ELEMENT_DESC){ 
+            .SemanticName = shader->input_element_descriptors[descriptor.input_element_descriptors[i].element_binding].SemanticName,
+            .SemanticIndex = descriptor.input_element_descriptors[i].element_index,
+            .Format = to_d3d12_format[descriptor.input_element_descriptors[i].format],
+            .InputSlot = descriptor.input_element_descriptors[i].buffer_index,
+            .AlignedByteOffset = descriptor.input_element_descriptors[i].offset,
+            .InputSlotClass = to_d3d12_input_classification[descriptor.input_element_descriptors[i].element_classification],
+            .InstanceDataStepRate = descriptor.input_element_descriptors[i].instance_rate,
+        };
+    }
+
+    descriptor;
 
     DXGI_SWAP_CHAIN_DESC1 d3d12_swapchain_description = {0};
     IDXGISwapChain3_GetDesc1(swapchain->swapchain, &d3d12_swapchain_description);
@@ -348,8 +484,8 @@ int device_create_pipeline_state_object(struct Device* device, struct Swapchain*
         .RasterizerState.FrontCounterClockwise = TRUE,
         .DepthStencilState.DepthEnable = FALSE,
         .DepthStencilState.StencilEnable = FALSE,
-        .InputLayout.pInputElementDescs = InputElements,
-        .InputLayout.NumElements = ARRAY_COUNT(InputElements),
+        .InputLayout.pInputElementDescs = input_elements,
+        .InputLayout.NumElements = descriptor.input_element_descriptors_count,
         .PrimitiveTopologyType = D3D12_PRIMITIVE_TOPOLOGY_TYPE_TRIANGLE,
         .NumRenderTargets = 1,
         .RTVFormats[0] = d3d12_swapchain_description.Format,

@@ -9,6 +9,7 @@
 #include "yara_d3d12.h"
 
 #include "util.h"
+#include "HandmadeMath.h"
 
 static bool DoneRunning;
 
@@ -30,10 +31,7 @@ LRESULT CALLBACK WindowCallback(HWND Window, UINT Message, WPARAM WParam, LPARAM
     }
     return Result;
 }
-// void main() 
-// {
-//     printf("ss");
-// }
+
 int CALLBACK WinMain(HINSTANCE CurrentInstance, HINSTANCE PrevInstance, LPSTR CommandLine, int ShowCode)
 {
     SetCpuAndThreadPriority();
@@ -77,8 +75,35 @@ int CALLBACK WinMain(HINSTANCE CurrentInstance, HINSTANCE PrevInstance, LPSTR Co
     struct Shader* shader = 0;
     device_create_shader(device, &shader);
 
+    D3D12_INPUT_ELEMENT_DESC InputElements[] = {
+        {"POS", 0, DXGI_FORMAT_R32G32_FLOAT, 0, 0, D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0},
+        {"COL", 0, DXGI_FORMAT_R32G32B32_FLOAT, 0, D3D12_APPEND_ALIGNED_ELEMENT, D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0},
+    };
+    InputElements;
+    struct Vertex 
+    {
+        Vec2 pos;
+        Vec3 color;
+    };
+    struct Input_Element_Descriptor input_element_descriptors[2] = {
+        {
+            .element_binding = 0,
+            .format = FORMAT_R32G32_FLOAT,
+            .element_classification = INPUT_ELEMENT_CLASSIFICATION_PER_VERTEX,
+        },
+        {
+            .element_binding = 1,
+            .format = FORMAT_R32G32B32_FLOAT,
+            .element_classification = INPUT_ELEMENT_CLASSIFICATION_PER_VERTEX,
+            .offset = offsetof(struct Vertex, color)
+        },
+    };
+    struct Pipeline_State_Object_Descriptor pipeline_state_object_descriptor = {
+        .input_element_descriptors = input_element_descriptors,
+        .input_element_descriptors_count = 2
+    };
     struct Pipeline_State_Object* pipeline_state_object = 0;
-    device_create_pipeline_state_object(device, swapchain, shader, &pipeline_state_object);
+    device_create_pipeline_state_object(device, swapchain, shader, pipeline_state_object_descriptor, &pipeline_state_object);
 
     float vertices[] = {
         // position    color

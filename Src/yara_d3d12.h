@@ -9,7 +9,150 @@
 #include <dxgi1_2.h>
 #include <dxgi1_3.h>
 #include <dxgi1_4.h>
-#include <d3dcompiler.h>
+#include <guiddef.h>
+
+// Custom ghetto DXC API as the official lib does not ship one.
+/*
+extern IID IID_IDxcBlob;
+extern IID IID_IDxcBlobEncoding;
+extern IID IID_IDxcIncludeHandler;
+extern IID IID_IDxcCompiler;
+extern IID IID_IDxcCompiler2;
+extern IID IID_IDxcCompiler3;
+extern IID IID_IDxcLinker;
+extern IID IID_IDxcCompilerArgs;
+extern IID IID_IDxcLibrary;
+extern IID IID_IDxcUtils;
+extern IID IID_IDxcValidator;
+extern IID IID_IDxcAssembler;
+extern IID IID_IDxcContainerReflection;
+extern IID IID_IDxcOptimizer;
+extern IID IID_IDxcContainerBuilder;
+extern IID IID_IDxcPdbUtils;
+extern const CLSID CLSID_DxcCompiler;
+extern const GUID CLSID_DxcLinker;
+extern const CLSID CLSID_DxcDiaDataSource;
+extern const CLSID CLSID_DxcCompilerArgs;
+extern const GUID CLSID_DxcLibrary;
+extern const GUID CLSID_DxcUtils;
+extern const GUID CLSID_DxcValidator;
+extern const GUID CLSID_DxcAssembler;
+extern const GUID CLSID_DxcContainerReflection;
+extern const GUID CLSID_DxcOptimizer;
+extern const GUID CLSID_DxcContainerBuilder;
+extern const GUID CLSID_DxcPdbUtils;
+#ifndef DXC_API_IMPORT
+#define DXC_API_IMPORT __declspec(dllimport)
+#endif
+DXC_API_IMPORT HRESULT __stdcall DxcCreateInstance( _In_ REFCLSID   rclsid, _In_ REFIID     riid, _Out_ LPVOID*   ppv);
+
+typedef struct DxcBuffer
+{
+    LPCVOID Ptr;
+    SIZE_T Size;
+    UINT Encoding;
+} DxcBuffer;
+typedef DxcBuffer DxcText;
+typedef struct DxcDefine
+{
+    LPCWSTR Name;
+    _Maybenull_ LPCWSTR Value;
+} DxcDefine;
+
+typedef struct
+{
+    IUnknownVtbl inherited_vtbl;
+    LPVOID(STDMETHODCALLTYPE *GetBufferPointer)(void* This);
+    SIZE_T(STDMETHODCALLTYPE *GetBufferSize)(void* This);
+} IDxcBlobVtbl;
+typedef struct
+{
+    IDxcBlobVtbl* vtbl;
+} IDxcBlob;
+typedef struct
+{
+    IDxcBlobVtbl inherited_vtbl;
+    HRESULT(STDMETHODCALLTYPE *GetEncoding)(void* This, _Out_ BOOL *pKnown, _Out_ UINT32 *pCodePage);
+} IDxcBlobEncodingVtbl;
+typedef struct
+{
+    IDxcBlobEncodingVtbl* vtbl;
+} IDxcBlobEncoding;
+typedef struct
+{
+    IDxcBlobEncodingVtbl inherited_vtbl;
+    LPCWSTR(STDMETHODCALLTYPE *GetStringPointer)(void* This);
+    SIZE_T(STDMETHODCALLTYPE *GetStringLength)(void* This);
+} IDxcBlobUtf16Vtbl;
+typedef struct 
+{
+    IDxcBlobUtf16Vtbl vtbl;
+} IDxcBlobUtf16;
+typedef struct 
+{
+    IDxcBlobEncodingVtbl inherited_vtbl;
+    LPCSTR(STDMETHODCALLTYPE *GetStringPointer)(void* This);
+    SIZE_T(STDMETHODCALLTYPE *GetStringLength)(void* This);
+} IDxcBlobUtf8Vtbl;
+typedef struct 
+{
+    IDxcBlobUtf8Vtbl vtbl;
+} IDxcBlobUtf8;
+typedef struct
+{
+    IUnknownVtbl inherited_vtbl;
+    HRESULT(STDMETHODCALLTYPE *LoadSource)(void* This, LPCWSTR pFilename, IDxcBlob **ppIncludeSource);
+} IDxcIncludeHandlerVtbl;
+typedef struct
+{
+    IDxcIncludeHandlerVtbl* vtbl;
+} IDxcIncludeHandler;
+typedef struct
+{
+    IUnknownVtbl inherited_vtbl;
+
+    LPCWSTR*( STDMETHODCALLTYPE *GetArguments)(void* This);
+    UINT32 (STDMETHODCALLTYPE *GetCount)(void* This);
+    HRESULT (STDMETHODCALLTYPE *AddArguments)(void* This, LPCWSTR *pArguments, _In_ UINT32 argCount);
+    HRESULT (STDMETHODCALLTYPE *AddArgumentsUTF8)(void* This, LPCSTR *pArguments, _In_ UINT32 argCount);
+    HRESULT (STDMETHODCALLTYPE *AddDefines)(void* This, const DxcDefine *pDefines, _In_ UINT32 defineCount);
+} IDxcCompilerArgsVtbl;
+typedef struct 
+{
+    IDxcCompilerArgsVtbl vtbl;
+} IDxcCompilerArgs;
+typedef struct
+{
+    IUnknownVtbl inherited_vtbl;
+    HRESULT(STDMETHODCALLTYPE *CreateBlobFromBlob)(void* This, _In_ IDxcBlob *pBlob, UINT32 offset, UINT32 length, _COM_Outptr_ IDxcBlob **ppResult);
+    HRESULT(STDMETHODCALLTYPE *CreateBlobFromPinned)(void* This, _In_bytecount_(size) LPCVOID pData, UINT32 size, UINT32 codePage, _COM_Outptr_ IDxcBlobEncoding **pBlobEncoding);
+    HRESULT(STDMETHODCALLTYPE *MoveToBlob)(void* This, _In_bytecount_(size) LPCVOID pData, IMalloc *pIMalloc, UINT32 size, UINT32 codePage, _COM_Outptr_ IDxcBlobEncoding **pBlobEncoding);
+    HRESULT(STDMETHODCALLTYPE *CreateBlob)(void* This, _In_bytecount_(size) LPCVOID pData, UINT32 size, UINT32 codePage, _COM_Outptr_ IDxcBlobEncoding **pBlobEncoding);
+    HRESULT(STDMETHODCALLTYPE *LoadFile)(void* This, _In_z_ LPCWSTR pFileName, _In_opt_ UINT32* pCodePage, _COM_Outptr_ IDxcBlobEncoding **pBlobEncoding);
+    HRESULT(STDMETHODCALLTYPE *CreateReadOnlyStreamFromBlob)(void* This, _In_ IDxcBlob *pBlob, _COM_Outptr_ IStream **ppStream);
+    HRESULT(STDMETHODCALLTYPE *CreateDefaultIncludeHandler)(void* This, _COM_Outptr_ IDxcIncludeHandler **ppResult);
+    HRESULT(STDMETHODCALLTYPE *GetBlobAsUtf8)(void* This, _In_ IDxcBlob *pBlob, _COM_Outptr_ IDxcBlobUtf8 **pBlobEncoding);
+    HRESULT(STDMETHODCALLTYPE *GetBlobAsUtf16)(void* This, _In_ IDxcBlob *pBlob, _COM_Outptr_ IDxcBlobUtf16 **pBlobEncoding);
+    HRESULT(STDMETHODCALLTYPE *GetDxilContainerPart)(void* This, _In_ const DxcBuffer *pShader, _In_ UINT32 DxcPart, _Outptr_result_nullonfailure_ void **ppPartData, _Out_ UINT32 *pPartSizeInBytes);
+    HRESULT(STDMETHODCALLTYPE *CreateReflection)(void* This, _In_ const DxcBuffer *pData, REFIID iid, void **ppvReflection);
+    HRESULT(STDMETHODCALLTYPE *BuildArguments)(void* This, LPCWSTR pSourceName, LPCWSTR pEntryPoint, LPCWSTR pTargetProfile, LPCWSTR *pArguments, UINT32 argCount, const DxcDefine *pDefines, UINT32 defineCount, IDxcCompilerArgs **ppArgs);
+    HRESULT(STDMETHODCALLTYPE *GetPDBContents)(void* This, _In_ IDxcBlob *pPDBBlob, _COM_Outptr_ IDxcBlob **ppHash, _COM_Outptr_ IDxcBlob **ppContainer);
+} IDxcUtilsVtbl;
+typedef struct IDxcCompiler IDxcCompiler;
+typedef struct IDxcCompiler2 IDxcCompiler2;
+typedef struct IDxcCompiler3 IDxcCompiler3;
+typedef struct IDxcLinker IDxcLinker;
+typedef struct IDxcLibrary IDxcLibrary;
+typedef struct IDxcUtils IDxcUtils;
+typedef struct IDxcValidator IDxcValidator;
+typedef struct IDxcAssembler IDxcAssembler;
+typedef struct IDxcContainerReflection IDxcContainerReflection;
+typedef struct IDxcOptimizer IDxcOptimizer;
+typedef struct IDxcContainerBuilder IDxcContainerBuilder;
+typedef struct IDxcPdbUtils IDxcPdbUtils;
+*/
+
+#include <d3d12shader.h>
 #pragma warning( pop )
 
 void* alloc(size_t size);
@@ -143,7 +286,11 @@ struct Shader
     ID3DBlob* signature_blob;
     ID3DBlob* vs_code_blob;
     ID3DBlob* ps_code_blob;
+    ID3D12ShaderReflection* reflection;
     unsigned long long last_used_fence_value;
+
+    D3D12_INPUT_ELEMENT_DESC* input_element_descriptors;
+    unsigned int input_element_descriptors_count;
 };
 struct Pipeline_State_Object
 {
@@ -198,6 +345,109 @@ static enum RESOURCE_STATE to_d3d12_resource_state[_RESOURCE_STATE_COUNT] = {
     D3D12_RESOURCE_STATE_COPY_DEST,
 
     D3D12_RESOURCE_STATE_PRESENT,
+};
+static DXGI_FORMAT to_d3d12_format[_FORMAT_COUNT] = {
+    DXGI_FORMAT_UNKNOWN,
+    DXGI_FORMAT_R32G32B32A32_TYPELESS,
+    DXGI_FORMAT_R32G32B32A32_FLOAT,
+    DXGI_FORMAT_R32G32B32A32_UINT,
+    DXGI_FORMAT_R32G32B32A32_SINT,
+    DXGI_FORMAT_R32G32B32_TYPELESS,
+    DXGI_FORMAT_R32G32B32_FLOAT,
+    DXGI_FORMAT_R32G32B32_UINT,
+    DXGI_FORMAT_R32G32B32_SINT,
+    DXGI_FORMAT_R32G32_TYPELESS,
+    DXGI_FORMAT_R32G32_FLOAT,
+    DXGI_FORMAT_R32G32_UINT,
+    DXGI_FORMAT_R32G32_SINT,
+    DXGI_FORMAT_R32_TYPELESS,
+    DXGI_FORMAT_D32_FLOAT,
+    DXGI_FORMAT_R32_FLOAT,
+    DXGI_FORMAT_R32_UINT,
+    DXGI_FORMAT_R32_SINT,
+
+    DXGI_FORMAT_R16G16B16A16_TYPELESS,
+    DXGI_FORMAT_R16G16B16A16_FLOAT,
+    DXGI_FORMAT_R16G16B16A16_UNORM,
+    DXGI_FORMAT_R16G16B16A16_UINT,
+    DXGI_FORMAT_R16G16B16A16_SNORM,
+    DXGI_FORMAT_R16G16B16A16_SINT,
+    DXGI_FORMAT_R16G16_TYPELESS,
+    DXGI_FORMAT_R16G16_FLOAT,
+    DXGI_FORMAT_R16G16_UNORM,
+    DXGI_FORMAT_R16G16_UINT,
+    DXGI_FORMAT_R16G16_SNORM,
+    DXGI_FORMAT_R16G16_SINT,
+    DXGI_FORMAT_R16_TYPELESS,
+    DXGI_FORMAT_R16_FLOAT,
+    DXGI_FORMAT_D16_UNORM,
+    DXGI_FORMAT_R16_UNORM,
+    DXGI_FORMAT_R16_UINT,
+    DXGI_FORMAT_R16_SNORM,
+    DXGI_FORMAT_R16_SINT,
+
+    DXGI_FORMAT_R8G8B8A8_TYPELESS,
+    DXGI_FORMAT_R8G8B8A8_UNORM,
+    DXGI_FORMAT_R8G8B8A8_UNORM_SRGB,
+    DXGI_FORMAT_R8G8B8A8_UINT,
+    DXGI_FORMAT_R8G8B8A8_SNORM,
+    DXGI_FORMAT_R8G8B8A8_SINT,
+    DXGI_FORMAT_R8G8_TYPELESS,
+    DXGI_FORMAT_R8G8_UNORM,
+    DXGI_FORMAT_R8G8_UINT,
+    DXGI_FORMAT_R8G8_SNORM,
+    DXGI_FORMAT_R8G8_SINT,
+    DXGI_FORMAT_R8_TYPELESS,
+    DXGI_FORMAT_R8_UNORM,
+    DXGI_FORMAT_R8_UINT,
+    DXGI_FORMAT_R8_SNORM,
+    DXGI_FORMAT_R8_SINT,
+
+    DXGI_FORMAT_R10G10B10A2_TYPELESS,
+    DXGI_FORMAT_R10G10B10A2_UNORM,
+    DXGI_FORMAT_R10G10B10A2_UINT,
+    DXGI_FORMAT_R11G11B10_FLOAT,
+    DXGI_FORMAT_R24G8_TYPELESS,
+    DXGI_FORMAT_D24_UNORM_S8_UINT,
+    DXGI_FORMAT_A8_UNORM,
+    DXGI_FORMAT_R1_UNORM,
+    DXGI_FORMAT_R9G9B9E5_SHAREDEXP,
+    DXGI_FORMAT_R8G8_B8G8_UNORM,
+    DXGI_FORMAT_G8R8_G8B8_UNORM,
+    DXGI_FORMAT_B5G6R5_UNORM,
+    DXGI_FORMAT_B5G5R5A1_UNORM,
+    DXGI_FORMAT_B8G8R8A8_UNORM,
+    DXGI_FORMAT_B8G8R8X8_UNORM,
+    DXGI_FORMAT_B8G8R8A8_TYPELESS,
+    DXGI_FORMAT_B8G8R8A8_UNORM_SRGB,
+    DXGI_FORMAT_B8G8R8X8_TYPELESS,
+    DXGI_FORMAT_B8G8R8X8_UNORM_SRGB,
+    DXGI_FORMAT_B4G4R4A4_UNORM,
+
+    DXGI_FORMAT_BC1_TYPELESS,
+    DXGI_FORMAT_BC1_UNORM,
+    DXGI_FORMAT_BC1_UNORM_SRGB,
+    DXGI_FORMAT_BC2_TYPELESS,
+    DXGI_FORMAT_BC2_UNORM,
+    DXGI_FORMAT_BC2_UNORM_SRGB,
+    DXGI_FORMAT_BC3_TYPELESS,
+    DXGI_FORMAT_BC3_UNORM,
+    DXGI_FORMAT_BC3_UNORM_SRGB,
+    DXGI_FORMAT_BC4_TYPELESS,
+    DXGI_FORMAT_BC4_UNORM,
+    DXGI_FORMAT_BC4_SNORM,
+    DXGI_FORMAT_BC5_TYPELESS,
+    DXGI_FORMAT_BC5_UNORM,
+    DXGI_FORMAT_BC5_SNORM,
+    DXGI_FORMAT_BC6H_TYPELESS,
+    DXGI_FORMAT_BC6H_UF16,
+    DXGI_FORMAT_BC6H_SF16,
+    DXGI_FORMAT_BC7_TYPELESS,
+    DXGI_FORMAT_BC7_UNORM,
+    DXGI_FORMAT_BC7_UNORM_SRGB,
+};
+static D3D12_INPUT_CLASSIFICATION to_d3d12_input_classification[_INPUT_ELEMENT_CLASSIFICATION_COUNT] = {
+
 };
 
 struct Command_List_Allocation* device_create_command_list_allocation(struct Device* device);

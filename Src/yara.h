@@ -80,6 +80,131 @@ struct Buffer_Descriptor
     enum BIND_TYPE bind_types[_BIND_TYPE_COUNT];
     size_t bind_types_count;
 };
+enum FORMAT
+{
+    FORMAT_UNKNOWN,
+    FORMAT_R32G32B32A32_TYPELESS,
+    FORMAT_R32G32B32A32_FLOAT,
+    FORMAT_R32G32B32A32_UINT,
+    FORMAT_R32G32B32A32_SINT,
+    FORMAT_R32G32B32_TYPELESS,
+    FORMAT_R32G32B32_FLOAT,
+    FORMAT_R32G32B32_UINT,
+    FORMAT_R32G32B32_SINT,
+    FORMAT_R32G32_TYPELESS,
+    FORMAT_R32G32_FLOAT,
+    FORMAT_R32G32_UINT,
+    FORMAT_R32G32_SINT,
+    FORMAT_R32_TYPELESS,
+    FORMAT_D32_FLOAT,
+    FORMAT_R32_FLOAT,
+    FORMAT_R32_UINT,
+    FORMAT_R32_SINT,
+
+    FORMAT_R16G16B16A16_TYPELESS,
+    FORMAT_R16G16B16A16_FLOAT,
+    FORMAT_R16G16B16A16_UNORM,
+    FORMAT_R16G16B16A16_UINT,
+    FORMAT_R16G16B16A16_SNORM,
+    FORMAT_R16G16B16A16_SINT,
+    FORMAT_R16G16_TYPELESS,
+    FORMAT_R16G16_FLOAT,
+    FORMAT_R16G16_UNORM,
+    FORMAT_R16G16_UINT,
+    FORMAT_R16G16_SNORM,
+    FORMAT_R16G16_SINT,
+    FORMAT_R16_TYPELESS,
+    FORMAT_R16_FLOAT,
+    FORMAT_D16_UNORM,
+    FORMAT_R16_UNORM,
+    FORMAT_R16_UINT,
+    FORMAT_R16_SNORM,
+    FORMAT_R16_SINT,
+
+    FORMAT_R8G8B8A8_TYPELESS,
+    FORMAT_R8G8B8A8_UNORM,
+    FORMAT_R8G8B8A8_UNORM_SRGB,
+    FORMAT_R8G8B8A8_UINT,
+    FORMAT_R8G8B8A8_SNORM,
+    FORMAT_R8G8B8A8_SINT,
+    FORMAT_R8G8_TYPELESS,
+    FORMAT_R8G8_UNORM,
+    FORMAT_R8G8_UINT,
+    FORMAT_R8G8_SNORM,
+    FORMAT_R8G8_SINT,
+    FORMAT_R8_TYPELESS,
+    FORMAT_R8_UNORM,
+    FORMAT_R8_UINT,
+    FORMAT_R8_SNORM,
+    FORMAT_R8_SINT,
+
+    FORMAT_R10G10B10A2_TYPELESS,
+    FORMAT_R10G10B10A2_UNORM,
+    FORMAT_R10G10B10A2_UINT,
+    FORMAT_R11G11B10_FLOAT,
+    FORMAT_R24G8_TYPELESS,
+    FORMAT_D24_UNORM_S8_UINT,
+    FORMAT_A8_UNORM,
+    FORMAT_R1_UNORM,
+    FORMAT_R9G9B9E5_SHAREDEXP,
+    FORMAT_R8G8_B8G8_UNORM,
+    FORMAT_G8R8_G8B8_UNORM,
+    FORMAT_B5G6R5_UNORM,
+    FORMAT_B5G5R5A1_UNORM,
+    FORMAT_B8G8R8A8_UNORM,
+    FORMAT_B8G8R8X8_UNORM,
+    FORMAT_B8G8R8A8_TYPELESS,
+    FORMAT_B8G8R8A8_UNORM_SRGB,
+    FORMAT_B8G8R8X8_TYPELESS,
+    FORMAT_B8G8R8X8_UNORM_SRGB,
+    FORMAT_B4G4R4A4_UNORM,
+
+    FORMAT_BC1_TYPELESS,
+    FORMAT_BC1_UNORM,
+    FORMAT_BC1_UNORM_SRGB,
+    FORMAT_BC2_TYPELESS,
+    FORMAT_BC2_UNORM,
+    FORMAT_BC2_UNORM_SRGB,
+    FORMAT_BC3_TYPELESS,
+    FORMAT_BC3_UNORM,
+    FORMAT_BC3_UNORM_SRGB,
+    FORMAT_BC4_TYPELESS,
+    FORMAT_BC4_UNORM,
+    FORMAT_BC4_SNORM,
+    FORMAT_BC5_TYPELESS,
+    FORMAT_BC5_UNORM,
+    FORMAT_BC5_SNORM,
+    FORMAT_BC6H_TYPELESS,
+    FORMAT_BC6H_UF16,
+    FORMAT_BC6H_SF16,
+    FORMAT_BC7_TYPELESS,
+    FORMAT_BC7_UNORM,
+    FORMAT_BC7_UNORM_SRGB,
+
+    _FORMAT_COUNT
+};
+enum INPUT_ELEMENT_CLASSIFICATION
+{
+    INPUT_ELEMENT_CLASSIFICATION_PER_VERTEX,
+    INPUT_ELEMENT_CLASSIFICATION_PER_INSTANCE,
+
+    _INPUT_ELEMENT_CLASSIFICATION_COUNT
+};
+struct Input_Element_Descriptor
+{
+    unsigned int element_binding;
+    unsigned int element_index;
+    enum FORMAT format;
+    unsigned int buffer_index;
+    unsigned int offset;
+    enum INPUT_ELEMENT_CLASSIFICATION element_classification;
+    unsigned int instance_rate;
+};
+struct Pipeline_State_Object_Descriptor
+{
+    struct Input_Element_Descriptor* input_element_descriptors;
+    unsigned int input_element_descriptors_count;
+};
 struct Viewport
 {
     float x;
@@ -106,7 +231,7 @@ int device_create_descriptor_set(struct Device* device, enum DESCRIPTOR_TYPE des
 int device_create_buffer(struct Device* device, struct Buffer_Descriptor buffer_description, struct Buffer** out_buffer);
 int device_create_upload_buffer(struct Device* device, void* data, size_t data_size, struct Upload_Buffer** out_upload_buffer);
 int device_create_shader(struct Device* device, struct Shader** out_shader);
-int device_create_pipeline_state_object(struct Device* device, struct Swapchain* swapchain, struct Shader* shader, struct Pipeline_State_Object** out_pipeline_state_object);
+int device_create_pipeline_state_object(struct Device* device, struct Swapchain* swapchain, struct Shader* shader, struct Pipeline_State_Object_Descriptor descriptor, struct Pipeline_State_Object** out_pipeline_state_object);
 int device_create_fence(struct Device* device, struct Fence** out_fence);
 
 void command_queue_destroy(struct Command_Queue* command_queue);
