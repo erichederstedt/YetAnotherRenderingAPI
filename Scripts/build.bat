@@ -8,7 +8,7 @@ if errorlevel 1 (
     call "run_vcvar.bat"
 )
 
-call "copy_asan_dll.bat"
+call "copy_file_from_path.bat" clang_rt.asan_dynamic-x86_64.dll
 
 pushd ..
 

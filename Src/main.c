@@ -87,12 +87,12 @@ int CALLBACK WinMain(HINSTANCE CurrentInstance, HINSTANCE PrevInstance, LPSTR Co
     };
     struct Input_Element_Descriptor input_element_descriptors[2] = {
         {
-            .element_binding = 0,
+            .element_binding.name = "POS",
             .format = FORMAT_R32G32_FLOAT,
             .element_classification = INPUT_ELEMENT_CLASSIFICATION_PER_VERTEX,
         },
         {
-            .element_binding = 1,
+            .element_binding.name = "COL",
             .format = FORMAT_R32G32B32_FLOAT,
             .element_classification = INPUT_ELEMENT_CLASSIFICATION_PER_VERTEX,
             .offset = offsetof(struct Vertex, color)

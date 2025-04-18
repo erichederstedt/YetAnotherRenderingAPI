@@ -10,9 +10,11 @@
 #include <dxgi1_3.h>
 #include <dxgi1_4.h>
 #include <guiddef.h>
+#include <d3dcompiler.h>
 
 #include <d3d12shader.h>
 #pragma warning( pop )
+
 
 void* alloc(size_t size);
 
@@ -145,11 +147,7 @@ struct Shader
     ID3DBlob* signature_blob;
     ID3DBlob* vs_code_blob;
     ID3DBlob* ps_code_blob;
-    ID3D12ShaderReflection* reflection;
     unsigned long long last_used_fence_value;
-
-    D3D12_INPUT_ELEMENT_DESC* input_element_descriptors;
-    unsigned int input_element_descriptors_count;
 };
 struct Pipeline_State_Object
 {

@@ -3,7 +3,7 @@ setlocal enabledelayedexpansion
 pushd %~dp0
 pushd ..
 
-set "FILENAME=clang_rt.asan_dynamic-x86_64.dll"
+set "FILENAME=%1"
 set "DESTDIR=Bin\"
 REM Replace semicolons with newlines for safe iteration
 for %%D in ("%PATH:;=" "%") do (

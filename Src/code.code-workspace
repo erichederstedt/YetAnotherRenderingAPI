@@ -30,7 +30,10 @@
 			"handmademath.h": "c",
 			"d3d12shader.h": "c",
 			"guiddef.h": "c",
-			"dxgi1_4.h": "c"
+			"dxgi1_4.h": "c",
+			"dxcapi.h": "c",
+			"chrono": "c",
+			"xlocale": "c"
 		}
 	}
 }

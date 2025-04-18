@@ -1,8 +1,7 @@
 #include "yara.h"
 #include "yara_d3d12.h"
-#include "dxcapi_c.h"
 
-// #pragma comment( lib, "d3dcompiler.lib" )
+#pragma comment( lib, "d3dcompiler.lib" )
 #pragma comment( lib, "d3d12.lib" )
 #pragma comment( lib, "dxgi.lib" )
 #pragma comment (lib, "dxguid.lib")
@@ -59,7 +58,7 @@ void mutex_destroy(Mutex* mutex)
     CloseHandle(mutex->mutex);
 }
 
-
+// #include <dxcapi.h>
 int device_create(struct Device** out_device)
 {
     *out_device = alloc(sizeof(struct Device));
@@ -310,16 +309,7 @@ int device_create_upload_buffer(struct Device* device, void* data, size_t data_s
 int device_create_shader(struct Device* device, struct Shader** out_shader)
 {
     *out_shader = alloc(sizeof(struct Shader));
-    (*out_shader)->releasable_objects = 5;
-
-    IDxcUtils* utils = 0;
-    IDxcCompiler3* compiler = 0;
-    IDxcIncludeHandler* includeHandler = 0;
-    
-    DxcCreateInstance(&CLSID_DxcUtils, &IID_IDxcUtils, &utils);
-    DxcCreateInstance(&CLSID_DxcCompiler, &IID_IDxcCompiler3, &compiler);
-    
-    utils->lpVtbl->CreateDefaultIncludeHandler(utils, &includeHandler);
+    (*out_shader)->releasable_objects = 4;
 
     D3D12_ROOT_SIGNATURE_DESC RootSignatureDesc = {
         .NumParameters = 0,
@@ -331,24 +321,8 @@ int device_create_shader(struct Device* device, struct Shader** out_shader)
     D3D12SerializeRootSignature(&RootSignatureDesc, D3D_ROOT_SIGNATURE_VERSION_1_0, &(*out_shader)->signature_blob, 0);
     ID3D12Device_CreateRootSignature(device->device, 0, ID3DBlob_GetBufferPointer((*out_shader)->signature_blob),  ID3DBlob_GetBufferSize((*out_shader)->signature_blob), &IID_ID3D12RootSignature, &(*out_shader)->root_signature);
     
-    // D3DCompileFromFile(L"./shader.hlsl", 0, 0, "VSMain", "vs_5_0", D3DCOMPILE_OPTIMIZATION_LEVEL3, 0, &(*out_shader)->vs_code_blob, 0);
-    // D3DCompileFromFile(L"./shader.hlsl", 0, 0, "PSMain", "ps_5_0", D3DCOMPILE_OPTIMIZATION_LEVEL3, 0, &(*out_shader)->ps_code_blob, 0);
-
-    // HRESULT result = D3DReflect((*out_shader)->vs_code_blob, ID3DBlob_GetBufferSize((*out_shader)->vs_code_blob), &IID_ID3D12ShaderReflection, &(*out_shader)->reflection);
-    // result;
-
-    D3D12_SHADER_DESC shader_desc;
-    (*out_shader)->reflection->lpVtbl->GetDesc((*out_shader)->reflection, &shader_desc);
-
-    (*out_shader)->input_element_descriptors_count = shader_desc.InputParameters;
-    (*out_shader)->input_element_descriptors = alloc(sizeof(D3D12_INPUT_ELEMENT_DESC) * shader_desc.InputParameters);
-    for (UINT i = 0; i < shader_desc.InputParameters; ++i) {
-        D3D12_SIGNATURE_PARAMETER_DESC param_desc;
-        (*out_shader)->reflection->lpVtbl->GetInputParameterDesc((*out_shader)->reflection, i, &param_desc);
-
-        (*out_shader)->input_element_descriptors[i].SemanticName = param_desc.SemanticName;
-        (*out_shader)->input_element_descriptors[i].SemanticIndex = param_desc.SemanticIndex;
-    }
+    D3DCompileFromFile(L"./shader.hlsl", 0, 0, "VSMain", "vs_5_0", D3DCOMPILE_OPTIMIZATION_LEVEL3, 0, &(*out_shader)->vs_code_blob, 0);
+    D3DCompileFromFile(L"./shader.hlsl", 0, 0, "PSMain", "ps_5_0", D3DCOMPILE_OPTIMIZATION_LEVEL3, 0, &(*out_shader)->ps_code_blob, 0);
 
     return 0;
 }
@@ -357,11 +331,11 @@ int device_create_pipeline_state_object(struct Device* device, struct Swapchain*
     *out_pipeline_state_object = alloc(sizeof(struct Pipeline_State_Object));
     (*out_pipeline_state_object)->releasable_objects = 1;
 
-    D3D12_INPUT_ELEMENT_DESC* input_elements = _alloca(descriptor.input_element_descriptors_count);
+    D3D12_INPUT_ELEMENT_DESC* input_elements = _alloca(sizeof(D3D12_INPUT_ELEMENT_DESC) * descriptor.input_element_descriptors_count);
     for (unsigned int i = 0; i < descriptor.input_element_descriptors_count; i++)
     {
         input_elements[i] = (D3D12_INPUT_ELEMENT_DESC){ 
-            .SemanticName = shader->input_element_descriptors[descriptor.input_element_descriptors[i].element_binding].SemanticName,
+            .SemanticName = descriptor.input_element_descriptors[i].element_binding.name,
             .SemanticIndex = descriptor.input_element_descriptors[i].element_index,
             .Format = to_d3d12_format[descriptor.input_element_descriptors[i].format],
             .InputSlot = descriptor.input_element_descriptors[i].buffer_index,
@@ -370,8 +344,6 @@ int device_create_pipeline_state_object(struct Device* device, struct Swapchain*
             .InstanceDataStepRate = descriptor.input_element_descriptors[i].instance_rate,
         };
     }
-
-    descriptor;
 
     DXGI_SWAP_CHAIN_DESC1 d3d12_swapchain_description = {0};
     IDXGISwapChain3_GetDesc1(swapchain->swapchain, &d3d12_swapchain_description);

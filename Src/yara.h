@@ -192,7 +192,11 @@ enum INPUT_ELEMENT_CLASSIFICATION
 };
 struct Input_Element_Descriptor
 {
-    unsigned int element_binding;
+    union
+    {
+        char* name; // D3D12
+        unsigned int slot; // VULKAN
+    } element_binding; 
     unsigned int element_index;
     enum FORMAT format;
     unsigned int buffer_index;
