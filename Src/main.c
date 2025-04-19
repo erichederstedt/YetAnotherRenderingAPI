@@ -75,16 +75,13 @@ int CALLBACK WinMain(HINSTANCE CurrentInstance, HINSTANCE PrevInstance, LPSTR Co
     struct Shader* shader = 0;
     device_create_shader(device, &shader);
 
-    D3D12_INPUT_ELEMENT_DESC InputElements[] = {
-        {"POS", 0, DXGI_FORMAT_R32G32_FLOAT, 0, 0, D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0},
-        {"COL", 0, DXGI_FORMAT_R32G32B32_FLOAT, 0, D3D12_APPEND_ALIGNED_ELEMENT, D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0},
-    };
-    InputElements;
+    #pragma pack(push, 1)
     struct Vertex 
     {
         Vec2 pos;
         Vec3 color;
     };
+    #pragma pack(pop)
     struct Input_Element_Descriptor input_element_descriptors[2] = {
         {
             .element_binding.name = "POS",
@@ -98,12 +95,38 @@ int CALLBACK WinMain(HINSTANCE CurrentInstance, HINSTANCE PrevInstance, LPSTR Co
             .offset = offsetof(struct Vertex, color)
         },
     };
+    struct Swapchain_Descriptor swapchain_descriptor = swapchain_get_descriptor(swapchain);
     struct Pipeline_State_Object_Descriptor pipeline_state_object_descriptor = {
+        .shader = shader,
+        .blend_descriptor.alpha_to_coverage_enable = FALSE,
+        .blend_descriptor.independent_blend_enable = FALSE,
+        .sample_mask = UINT_MAX,
+        .rasterizer_descriptor.fill_mode = FILL_MODE_SOLID,
+        .rasterizer_descriptor.cull_mode = CULL_MODE_NONE,
+        .rasterizer_descriptor.front_counter_clockwise = TRUE,
+        .depth_stencil_descriptor.depth_enable = FALSE,
+        .depth_stencil_descriptor.stencil_enable = FALSE,
         .input_element_descriptors = input_element_descriptors,
-        .input_element_descriptors_count = 2
+        .input_element_descriptors_count = 2,
+        .primitive_topology_type = PRIMITIVE_TOPOLOGY_TYPE_TRIANGLE,
+        .render_target_count = 1,
+        .render_target_formats[0] = swapchain_descriptor.format,
+        .depth_stencil_format = FORMAT_D24_UNORM_S8_UINT,
+        .sample_descriptor = {
+            .count = 1,
+            .quality = 0,
+        }
     };
+    for (int i = 0; i < 8; ++i)
+    {
+        pipeline_state_object_descriptor.blend_descriptor.render_target_blend_descriptors[i] = (struct Render_Target_Blend_Descriptor){
+            .blend_enable = FALSE,
+            .logic_op_enable = FALSE,
+            .render_target_write_mask = COLOR_WRITE_ENABLE_ALL
+        };
+    }
     struct Pipeline_State_Object* pipeline_state_object = 0;
-    device_create_pipeline_state_object(device, swapchain, shader, pipeline_state_object_descriptor, &pipeline_state_object);
+    device_create_pipeline_state_object(device, pipeline_state_object_descriptor, &pipeline_state_object);
 
     float vertices[] = {
         // position    color

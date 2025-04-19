@@ -326,7 +326,7 @@ int device_create_shader(struct Device* device, struct Shader** out_shader)
 
     return 0;
 }
-int device_create_pipeline_state_object(struct Device* device, struct Swapchain* swapchain, struct Shader* shader, struct Pipeline_State_Object_Descriptor descriptor, struct Pipeline_State_Object** out_pipeline_state_object)
+int device_create_pipeline_state_object(struct Device* device, struct Pipeline_State_Object_Descriptor descriptor, struct Pipeline_State_Object** out_pipeline_state_object)
 {
     *out_pipeline_state_object = alloc(sizeof(struct Pipeline_State_Object));
     (*out_pipeline_state_object)->releasable_objects = 1;
@@ -345,37 +345,72 @@ int device_create_pipeline_state_object(struct Device* device, struct Swapchain*
         };
     }
 
-    DXGI_SWAP_CHAIN_DESC1 d3d12_swapchain_description = {0};
-    IDXGISwapChain3_GetDesc1(swapchain->swapchain, &d3d12_swapchain_description);
-
     D3D12_GRAPHICS_PIPELINE_STATE_DESC d3d12_pipeline_state_object_description = {
-        .pRootSignature = shader->root_signature,
-        .VS = { ID3DBlob_GetBufferPointer(shader->vs_code_blob), ID3DBlob_GetBufferSize(shader->vs_code_blob)},
-        .PS = { ID3DBlob_GetBufferPointer(shader->ps_code_blob), ID3DBlob_GetBufferSize(shader->ps_code_blob)},
-        .BlendState.AlphaToCoverageEnable = FALSE,
-        .BlendState.IndependentBlendEnable = FALSE,
-        .SampleMask = UINT_MAX,
-        .RasterizerState.FillMode = D3D12_FILL_MODE_SOLID,
-        .RasterizerState.CullMode = D3D12_CULL_MODE_NONE,
-        .RasterizerState.FrontCounterClockwise = TRUE,
-        .DepthStencilState.DepthEnable = FALSE,
-        .DepthStencilState.StencilEnable = FALSE,
+        .pRootSignature = descriptor.shader->root_signature,
+        .VS = { ID3DBlob_GetBufferPointer(descriptor.shader->vs_code_blob), ID3DBlob_GetBufferSize(descriptor.shader->vs_code_blob)},
+        .PS = { ID3DBlob_GetBufferPointer(descriptor.shader->ps_code_blob), ID3DBlob_GetBufferSize(descriptor.shader->ps_code_blob)},
+        .BlendState.AlphaToCoverageEnable = descriptor.blend_descriptor.alpha_to_coverage_enable,
+        .BlendState.IndependentBlendEnable = descriptor.blend_descriptor.independent_blend_enable,
+        .SampleMask = descriptor.sample_mask,
+        .RasterizerState = {
+            .FillMode = to_d3d12_fill_mode[descriptor.rasterizer_descriptor.fill_mode],
+            .CullMode = to_d3d12_cull_mode[descriptor.rasterizer_descriptor.cull_mode],
+            .FrontCounterClockwise = descriptor.rasterizer_descriptor.front_counter_clockwise,
+            .DepthBias = descriptor.rasterizer_descriptor.depth_bias,
+            .DepthBiasClamp = descriptor.rasterizer_descriptor.depth_bias_clamp,
+            .SlopeScaledDepthBias = descriptor.rasterizer_descriptor.slope_scaled_depth_bias,
+            .DepthClipEnable = descriptor.rasterizer_descriptor.depth_clip_enable,
+            .MultisampleEnable = descriptor.rasterizer_descriptor.multisample_enable,
+            .AntialiasedLineEnable = descriptor.rasterizer_descriptor.antialiased_line_enable,
+            .ForcedSampleCount = descriptor.rasterizer_descriptor.forced_sample_count,
+            .ConservativeRaster = to_d3d12_conservative_rasterization_mode[descriptor.rasterizer_descriptor.conservative_raster],
+        },
+        .DepthStencilState = {
+            .DepthEnable = descriptor.depth_stencil_descriptor.depth_enable,
+            .DepthWriteMask = to_d3d12_depth_write_mask[descriptor.depth_stencil_descriptor.depth_write_mask],
+            .DepthFunc = to_d3d12_comparison_func[descriptor.depth_stencil_descriptor.depth_func],
+            .StencilEnable = descriptor.depth_stencil_descriptor.stencil_enable,
+            .StencilReadMask = descriptor.depth_stencil_descriptor.stencil_read_mask,
+            .StencilWriteMask = descriptor.depth_stencil_descriptor.stencil_write_mask,
+            .FrontFace = {
+                .StencilFailOp = to_d3d12_blend_op[descriptor.depth_stencil_descriptor.front_face_op.stencil_fail_op],
+                .StencilDepthFailOp = to_d3d12_blend_op[descriptor.depth_stencil_descriptor.front_face_op.stencil_depth_fail_op],
+                .StencilPassOp = to_d3d12_blend_op[descriptor.depth_stencil_descriptor.front_face_op.stencil_pass_op],
+                .StencilFunc = to_d3d12_comparison_func[descriptor.depth_stencil_descriptor.front_face_op.stencil_func],
+            },
+            .BackFace = {
+                .StencilFailOp = to_d3d12_blend_op[descriptor.depth_stencil_descriptor.back_face_op.stencil_fail_op],
+                .StencilDepthFailOp = to_d3d12_blend_op[descriptor.depth_stencil_descriptor.back_face_op.stencil_depth_fail_op],
+                .StencilPassOp = to_d3d12_blend_op[descriptor.depth_stencil_descriptor.back_face_op.stencil_pass_op],
+                .StencilFunc = to_d3d12_comparison_func[descriptor.depth_stencil_descriptor.back_face_op.stencil_func],
+            },
+        },
         .InputLayout.pInputElementDescs = input_elements,
         .InputLayout.NumElements = descriptor.input_element_descriptors_count,
-        .PrimitiveTopologyType = D3D12_PRIMITIVE_TOPOLOGY_TYPE_TRIANGLE,
-        .NumRenderTargets = 1,
-        .RTVFormats[0] = d3d12_swapchain_description.Format,
-        .DSVFormat = DXGI_FORMAT_D24_UNORM_S8_UINT,
-        .SampleDesc.Count = 1, // one sample per pixel
+        .PrimitiveTopologyType = to_d3d12_primitive_topology_type[descriptor.primitive_topology_type],
+        .NumRenderTargets = descriptor.render_target_count,
+        .DSVFormat = to_d3d12_format[descriptor.depth_stencil_format],
+        .SampleDesc = {
+            .Count = descriptor.sample_descriptor.count,
+            .Quality = descriptor.sample_descriptor.quality,
+        },
         .Flags = D3D12_PIPELINE_STATE_FLAG_NONE,
     };
-    for (int i = 0; i < ARRAY_COUNT(d3d12_pipeline_state_object_description.BlendState.RenderTarget); ++i)
+    
+    for (int i = 0; i < 8; ++i)
     {
-        d3d12_pipeline_state_object_description.BlendState.RenderTarget[i] = (D3D12_RENDER_TARGET_BLEND_DESC){
-            .BlendEnable = FALSE,
-            .LogicOpEnable = FALSE,
-            .RenderTargetWriteMask = D3D12_COLOR_WRITE_ENABLE_ALL
-        };
+        d3d12_pipeline_state_object_description.BlendState.RenderTarget[i].BlendEnable = descriptor.blend_descriptor.render_target_blend_descriptors[i].blend_enable;
+        d3d12_pipeline_state_object_description.BlendState.RenderTarget[i].LogicOpEnable = descriptor.blend_descriptor.render_target_blend_descriptors[i].logic_op_enable;
+        d3d12_pipeline_state_object_description.BlendState.RenderTarget[i].SrcBlend = to_d3d12_blend[descriptor.blend_descriptor.render_target_blend_descriptors[i].src_blend_type];
+        d3d12_pipeline_state_object_description.BlendState.RenderTarget[i].DestBlend = to_d3d12_blend[descriptor.blend_descriptor.render_target_blend_descriptors[i].dest_blend_type];
+        d3d12_pipeline_state_object_description.BlendState.RenderTarget[i].BlendOp = to_d3d12_blend_op[descriptor.blend_descriptor.render_target_blend_descriptors[i].blend_op];
+        d3d12_pipeline_state_object_description.BlendState.RenderTarget[i].SrcBlendAlpha = to_d3d12_blend[descriptor.blend_descriptor.render_target_blend_descriptors[i].src_blend_type_alpha];
+        d3d12_pipeline_state_object_description.BlendState.RenderTarget[i].DestBlendAlpha = to_d3d12_blend[descriptor.blend_descriptor.render_target_blend_descriptors[i].dest_blend_type_alpha];
+        d3d12_pipeline_state_object_description.BlendState.RenderTarget[i].BlendOpAlpha = to_d3d12_blend_op[descriptor.blend_descriptor.render_target_blend_descriptors[i].blend_op_alpha];
+        d3d12_pipeline_state_object_description.BlendState.RenderTarget[i].LogicOp = to_d3d12_logic_op[descriptor.blend_descriptor.render_target_blend_descriptors[i].logic_op];
+        d3d12_pipeline_state_object_description.BlendState.RenderTarget[i].RenderTargetWriteMask = descriptor.blend_descriptor.render_target_blend_descriptors[i].render_target_write_mask;
+        
+        d3d12_pipeline_state_object_description.RTVFormats[i] = to_d3d12_format[descriptor.render_target_formats[i]];
     }
     ID3D12Device_CreateGraphicsPipelineState(device->device, &d3d12_pipeline_state_object_description, &IID_ID3D12PipelineState, &(*out_pipeline_state_object)->pipeline_state_object);
 
@@ -547,6 +582,17 @@ int swapchain_present(struct Swapchain* swapchain)
     swapchain->frame = next_frame_index;
 
     return 0;
+}
+struct Swapchain_Descriptor swapchain_get_descriptor(struct Swapchain* swapchain)
+{
+    DXGI_SWAP_CHAIN_DESC1 d3d12_swapchain_description = {0};
+    IDXGISwapChain3_GetDesc1(swapchain->swapchain, &d3d12_swapchain_description);
+
+    return (struct Swapchain_Descriptor){
+        .backbuffer_count = d3d12_swapchain_description.BufferCount,
+        .window = 0,
+        .format = to_yara_format[d3d12_swapchain_description.Format]
+    };
 }
 
 void command_list_destroy(struct Command_List* command_list);

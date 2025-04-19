@@ -33,7 +33,13 @@
 			"dxgi1_4.h": "c",
 			"dxcapi.h": "c",
 			"chrono": "c",
-			"xlocale": "c"
+			"xlocale": "c",
+			"format": "c",
+			"thread": "c",
+			"iterator": "c",
+			"xhash": "c",
+			"xmemory": "c",
+			"xtree": "c"
 		}
 	}
 }
