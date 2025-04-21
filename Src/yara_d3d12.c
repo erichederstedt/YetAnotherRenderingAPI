@@ -515,6 +515,12 @@ void command_queue_execute(struct Command_Queue* command_queue, struct Command_L
             resource_barrier_command_lists[resource_barrier_command_lists_count++] = resource_barrier_command_list;
         }
 
+        for (size_t j = 0; j < command_list->buffer_states_count; j++)
+        {
+            struct Buffer_State* buffer_state = &command_list->buffer_states[j];
+            buffer_state->buffer->last_known_state = buffer_state->state;
+        }
+        
         d3d12_command_lists[command_lists_to_execute++] = (ID3D12CommandList*)command_list->command_list_allocation->command_list;
     }
     

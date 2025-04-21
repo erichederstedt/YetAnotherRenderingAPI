@@ -75,13 +75,11 @@ int CALLBACK WinMain(HINSTANCE CurrentInstance, HINSTANCE PrevInstance, LPSTR Co
     struct Shader* shader = 0;
     device_create_shader(device, &shader);
 
-    #pragma pack(push, 1)
     struct Vertex 
     {
         Vec2 pos;
         Vec3 color;
     };
-    #pragma pack(pop)
     struct Input_Element_Descriptor input_element_descriptors[2] = {
         {
             .element_binding.name = "POS",
