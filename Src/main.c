@@ -158,7 +158,6 @@ int CALLBACK WinMain(HINSTANCE CurrentInstance, HINSTANCE PrevInstance, LPSTR Co
     };
     struct Upload_Buffer* vertex_upload_buffer = 0;
     device_create_upload_buffer(device, vertices, sizeof(vertices), &vertex_upload_buffer);
-
     struct Buffer* vertex_buffer = 0;
     {
         struct Buffer_Descriptor buffer_description = {
@@ -175,6 +174,29 @@ int CALLBACK WinMain(HINSTANCE CurrentInstance, HINSTANCE PrevInstance, LPSTR Co
             .bind_types_count = 1
         };
         device_create_buffer(device, buffer_description, &vertex_buffer);
+    }
+
+    unsigned int indices[] = {
+        0, 1, 2
+    };  
+    struct Upload_Buffer* index_upload_buffer = 0;
+    device_create_upload_buffer(device, indices, sizeof(indices), &index_upload_buffer);   
+    struct Buffer* index_buffer = 0;
+    {
+        struct Buffer_Descriptor buffer_description = {
+            .width = sizeof(indices),
+            .height = 1,
+            .descriptor_sets = {
+                cbv_srv_uav_descriptor_set
+            },
+            .descriptor_sets_count = 1,
+            .buffer_type = BUFFER_TYPE_BUFFER,
+            .bind_types = {
+                BIND_TYPE_SRV
+            },
+            .bind_types_count = 1
+        };
+        device_create_buffer(device, buffer_description, &index_buffer);
     }
 
     struct Constant
@@ -207,6 +229,7 @@ int CALLBACK WinMain(HINSTANCE CurrentInstance, HINSTANCE PrevInstance, LPSTR Co
         command_list_reset(upload_command_list);
 
         command_list_copy_upload_buffer_to_buffer(upload_command_list, vertex_upload_buffer, vertex_buffer);
+        command_list_copy_upload_buffer_to_buffer(upload_command_list, index_upload_buffer, index_buffer);
 
         command_list_close(upload_command_list);
 
@@ -285,9 +308,10 @@ int CALLBACK WinMain(HINSTANCE CurrentInstance, HINSTANCE PrevInstance, LPSTR Co
         float clear_color[4] = {0.1f, 0.1f, 0.1f, 1.0f};
         command_list_clear_render_target(command_list, backbuffer, clear_color);
         command_list_set_vertex_buffer(command_list, vertex_buffer, sizeof(vertices), sizeof(struct Vertex));
+        command_list_set_index_buffer(command_list, index_buffer, sizeof(indices), FORMAT_R32_UINT);
         command_list_set_constant_buffer(command_list, constant_buffer, 0);
         command_list_set_primitive_topology(command_list, PRIMITIVE_TOPOLOGY_TRIANGLELIST);
-        command_list_draw_instanced(command_list, 3, 1, 0, 0);
+        command_list_draw_indexed_instanced(command_list, 3, 1, 0, 0, 0);
         
         command_list_set_buffer_state(command_list, backbuffer, RESOURCE_STATE_PRESENT);
         command_list_close(command_list);

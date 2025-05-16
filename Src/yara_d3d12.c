@@ -705,6 +705,17 @@ void command_list_set_vertex_buffer(struct Command_List* command_list, struct Bu
     ID3D12GraphicsCommandList_IASetVertexBuffers(command_list->command_list_allocation->command_list, 0, 1, &vertex_buffer_view);
     command_list_append_accessed_buffers(command_list, ACCESSED_OBJECT(vertex_buffer));
 }
+void command_list_set_index_buffer(struct Command_List* command_list, struct Buffer* index_buffer, size_t size, enum FORMAT format)
+{
+    command_list_set_buffer_state(command_list, index_buffer, RESOURCE_STATE_INDEX_BUFFER);
+    D3D12_INDEX_BUFFER_VIEW index_buffer_view = {
+        .BufferLocation = ID3D12Resource_GetGPUVirtualAddress(index_buffer->resource),
+        .SizeInBytes = (UINT)size,
+        .Format = to_d3d12_format[format]
+    };
+    ID3D12GraphicsCommandList_IASetIndexBuffer(command_list->command_list_allocation->command_list, &index_buffer_view);
+    command_list_append_accessed_buffers(command_list, ACCESSED_OBJECT(index_buffer));
+}
 void command_list_set_constant_buffer(struct Command_List* command_list, struct Buffer* constant_buffer, unsigned int root_parameter_index)
 {
     command_list_set_buffer_state(command_list, constant_buffer, RESOURCE_STATE_CONSTANT_BUFFER);
@@ -718,6 +729,10 @@ void command_list_set_primitive_topology(struct Command_List* command_list, enum
 void command_list_draw_instanced(struct Command_List* command_list, size_t vertex_count_per_instance, size_t instance_count, size_t start_vertex_location, size_t start_instance_location)
 {
     ID3D12GraphicsCommandList_DrawInstanced(command_list->command_list_allocation->command_list, (UINT)vertex_count_per_instance, (UINT)instance_count, (UINT)start_vertex_location, (UINT)start_instance_location);
+}
+void command_list_draw_indexed_instanced(struct Command_List* command_list, size_t index_count_per_instance, size_t instance_count, size_t start_index_location, size_t start_instance_location, size_t base_vertex_location)
+{
+    ID3D12GraphicsCommandList_DrawIndexedInstanced(command_list->command_list_allocation->command_list, (UINT)index_count_per_instance, (UINT)instance_count, (UINT)start_index_location, (UINT)base_vertex_location, (UINT)start_instance_location);
 }
 void command_list_copy_upload_buffer_to_buffer(struct Command_List* command_list, struct Upload_Buffer* src, struct Buffer* dst)
 {
