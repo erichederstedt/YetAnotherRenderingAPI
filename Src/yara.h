@@ -451,6 +451,7 @@ void command_list_set_scissor_rect(struct Command_List* command_list, struct Rec
 void command_list_set_render_targets(struct Command_List* command_list, struct Buffer* render_targets[], int render_targets_count, struct Buffer* opt_depth_buffer/* = 0*/);
 void command_list_clear_render_target(struct Command_List* command_list, struct Buffer* render_target, float clear_color[4]);
 void command_list_set_vertex_buffer(struct Command_List* command_list, struct Buffer* vertex_buffer, size_t size, size_t stride);
+void command_list_set_constant_buffer(struct Command_List* command_list, struct Buffer* constant_buffer, unsigned int root_parameter_index);
 void command_list_set_primitive_topology(struct Command_List* command_list, enum PRIMITIVE_TOPOLOGY primitive_topology);
 void command_list_draw_instanced(struct Command_List* command_list, size_t vertex_count_per_instance, size_t instance_count, size_t start_vertex_location, size_t start_instance_location);
 void command_list_copy_upload_buffer_to_buffer(struct Command_List* command_list, struct Upload_Buffer* src, struct Buffer* dst);

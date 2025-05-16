@@ -1,26 +1,35 @@
 struct vs_in
 {
-    float2 P : POS;
-    float3 Col : COL;
+    float3 pos : POS;
+    float4 color : COL;
 };
 
 struct vs_out
 {
-    float4 SV_P : SV_POSITION;
-    float3 Col : COL;
+    float4 ws_pos : WS_POSITION;
+    float4 cs_pos : SV_POSITION;
+    float4 color : COL;
 };
 
+cbuffer model_cbuffer : register(b0)
+{
+    float4x4 model_to_world;
+    float4x4 world_to_clip;
+} 
+
+[RootSignature("RootFlags(ALLOW_INPUT_ASSEMBLER_INPUT_LAYOUT), CBV(b0)")]
 vs_out VSMain(vs_in In)
 {
     vs_out Out;
     
-    Out.SV_P = float4(In.P, 0.0, 1.0);
-    Out.Col = In.Col;
+    Out.ws_pos = mul(model_to_world, float4(In.pos, 1.0));
+    Out.cs_pos = mul(world_to_clip, Out.ws_pos);
+    Out.color = In.color;
     
     return Out;
 }
 
 float4 PSMain(vs_out In) : SV_TARGET
 {
-    return float4(sqrt(In.Col), 1.0);
+    return float4(sqrt(In.color.rgb), 1.0);
 }

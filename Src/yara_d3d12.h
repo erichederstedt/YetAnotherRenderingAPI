@@ -40,7 +40,7 @@ struct Accessed_Object
     void* object;
 };
 #define ACCESSED_OBJECT(object) (struct Accessed_Object){ (void*)object }
-int accessed_object_get_releasable_object_count(struct Accessed_Object accessed_object);
+unsigned long long accessed_object_get_releasable_object_count(struct Accessed_Object accessed_object);
 unsigned long long accessed_object_get_last_fence_value(struct Accessed_Object accessed_object);
 void accessed_object_set_last_fence_value(struct Accessed_Object accessed_object, unsigned long long last_fence_value);
 IUnknown** accessed_object_get_releasable_object(struct Accessed_Object accessed_object, int index);
@@ -109,7 +109,7 @@ struct Command_List
 };
 struct Descriptor_Set
 {
-    int releasable_objects;
+    unsigned long long releasable_objects;
     ID3D12DescriptorHeap* descriptor_heap;
     unsigned long long last_used_fence_value;
 
@@ -124,25 +124,27 @@ struct Descriptor_Handle
 };
 struct Buffer
 {
-    int releasable_objects;
+    unsigned long long releasable_objects;
     ID3D12Resource* resource;
     unsigned long long last_used_fence_value;
 
     struct Descriptor_Handle handles[D3D12_DESCRIPTOR_HEAP_TYPE_NUM_TYPES];
     enum RESOURCE_STATES last_known_state;
     struct Device* device;
+    unsigned long long size;
 };
 struct Upload_Buffer
 {
-    int releasable_objects;
+    unsigned long long releasable_objects;
     ID3D12Resource* resource;
     unsigned long long last_used_fence_value;
 
     D3D12_VERTEX_BUFFER_VIEW vertex_buffer_view;
+    struct Device* device;
 };
 struct Shader
 {
-    int releasable_objects;
+    unsigned long long releasable_objects;
     ID3D12RootSignature* root_signature;
     ID3DBlob* signature_blob;
     ID3DBlob* vs_code_blob;
@@ -151,13 +153,13 @@ struct Shader
 };
 struct Pipeline_State_Object
 {
-    int releasable_objects;
+    unsigned long long releasable_objects;
     ID3D12PipelineState* pipeline_state_object;
     unsigned long long last_used_fence_value;
 };
 struct Fence
 {
-    int releasable_objects;
+    unsigned long long releasable_objects;
     ID3D12Fence* fence;
     unsigned long long last_used_fence_value;
 

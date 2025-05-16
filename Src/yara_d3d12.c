@@ -80,14 +80,14 @@ int device_create(struct Device** out_device)
     return 0;
 }
 
-int accessed_object_get_releasable_object_count(struct Accessed_Object accessed_object)
+unsigned long long accessed_object_get_releasable_object_count(struct Accessed_Object accessed_object)
 {
-    return *(int*)(accessed_object.object);
+    return *(unsigned long long*)(accessed_object.object);
 }
 unsigned long long accessed_object_get_last_fence_value(struct Accessed_Object accessed_object)
 {
     char* object = (char*)accessed_object.object;
-    object += sizeof(int);
+    object += sizeof(unsigned long long);
     object += sizeof(IUnknown*) * accessed_object_get_releasable_object_count(accessed_object);
     return *(unsigned long long*)(object);
 }
@@ -96,14 +96,14 @@ void accessed_object_set_last_fence_value(struct Accessed_Object accessed_object
     char* object = (char*)accessed_object.object;
     object += 8;
     int fuckMe1 = sizeof(IUnknown*);
-    int fuckMe2 = accessed_object_get_releasable_object_count(accessed_object);
+    unsigned long long fuckMe2 = accessed_object_get_releasable_object_count(accessed_object);
     IUnknown** fuckme3 = accessed_object_get_releasable_object(accessed_object, 0); fuckme3;
     object += fuckMe1 * fuckMe2;
     *(unsigned long long*)(object) = last_fence_value;
 }
 IUnknown** accessed_object_get_releasable_object(struct Accessed_Object accessed_object, int index)
 {
-    int releasable_object_count = accessed_object_get_releasable_object_count(accessed_object);
+    unsigned long long releasable_object_count = accessed_object_get_releasable_object_count(accessed_object);
     if (index >= releasable_object_count)
         return 0;
 
@@ -212,6 +212,7 @@ int device_create_buffer(struct Device* device, struct Buffer_Descriptor buffer_
     *out_buffer = alloc(sizeof(struct Buffer));
     (*out_buffer)->device = device;
     (*out_buffer)->releasable_objects = 1;
+    (*out_buffer)->size = buffer_description.width * buffer_description.height;
 
     D3D12_HEAP_PROPERTIES defaultHeapProperties = {
         .Type = D3D12_HEAP_TYPE_DEFAULT
@@ -279,6 +280,7 @@ int device_create_upload_buffer(struct Device* device, void* data, size_t data_s
     *out_upload_buffer = alloc(sizeof(struct Upload_Buffer));
     (*out_upload_buffer)->releasable_objects = 1;
 
+    (*out_upload_buffer)->device = device;
 
     D3D12_HEAP_PROPERTIES UploadHeapProperties = {
         .Type = D3D12_HEAP_TYPE_UPLOAD,
@@ -306,23 +308,53 @@ int device_create_upload_buffer(struct Device* device, void* data, size_t data_s
 
     return 0;
 }
+#include <stdio.h>
 int device_create_shader(struct Device* device, struct Shader** out_shader)
 {
     *out_shader = alloc(sizeof(struct Shader));
     (*out_shader)->releasable_objects = 4;
 
-    D3D12_ROOT_SIGNATURE_DESC RootSignatureDesc = {
-        .NumParameters = 0,
-        .pParameters = 0,
-        .NumStaticSamplers = 0,
-        .pStaticSamplers = 0,
-        .Flags = D3D12_ROOT_SIGNATURE_FLAG_ALLOW_INPUT_ASSEMBLER_INPUT_LAYOUT
-    };
-    D3D12SerializeRootSignature(&RootSignatureDesc, D3D_ROOT_SIGNATURE_VERSION_1_0, &(*out_shader)->signature_blob, 0);
-    ID3D12Device_CreateRootSignature(device->device, 0, ID3DBlob_GetBufferPointer((*out_shader)->signature_blob),  ID3DBlob_GetBufferSize((*out_shader)->signature_blob), &IID_ID3D12RootSignature, &(*out_shader)->root_signature);
+    // D3D12_ROOT_SIGNATURE_DESC RootSignatureDesc = {
+    //     .NumParameters = 0,
+    //     .pParameters = 0,
+    //     .NumStaticSamplers = 0,
+    //     .pStaticSamplers = 0,
+    //     .Flags = D3D12_ROOT_SIGNATURE_FLAG_ALLOW_INPUT_ASSEMBLER_INPUT_LAYOUT
+    // };
+    // D3D12SerializeRootSignature(&RootSignatureDesc, D3D_ROOT_SIGNATURE_VERSION_1_0, &(*out_shader)->signature_blob, 0);
+    // ID3D12Device_CreateRootSignature(device->device, 0, ID3DBlob_GetBufferPointer((*out_shader)->signature_blob),  ID3DBlob_GetBufferSize((*out_shader)->signature_blob), &IID_ID3D12RootSignature, &(*out_shader)->root_signature);
     
-    D3DCompileFromFile(L"./shader.hlsl", 0, 0, "VSMain", "vs_5_0", D3DCOMPILE_OPTIMIZATION_LEVEL3, 0, &(*out_shader)->vs_code_blob, 0);
-    D3DCompileFromFile(L"./shader.hlsl", 0, 0, "PSMain", "ps_5_0", D3DCOMPILE_OPTIMIZATION_LEVEL3, 0, &(*out_shader)->ps_code_blob, 0);
+    ID3DBlob* error_blob = 0;
+    HRESULT vs_error = D3DCompileFromFile(L"./shader.hlsl", 0, 0, "VSMain", "vs_5_0", D3DCOMPILE_DEBUG | D3DCOMPILE_SKIP_OPTIMIZATION, 0, &(*out_shader)->vs_code_blob, &error_blob); // D3DCOMPILE_OPTIMIZATION_LEVEL3
+    if (FAILED(vs_error) || error_blob)
+    {
+        printf("%s\n", (char*)error_blob->lpVtbl->GetBufferPointer(error_blob));
+        __debugbreak();
+    }
+    HRESULT ps_error = D3DCompileFromFile(L"./shader.hlsl", 0, 0, "PSMain", "ps_5_0", D3DCOMPILE_DEBUG | D3DCOMPILE_SKIP_OPTIMIZATION, 0, &(*out_shader)->ps_code_blob, &error_blob);
+    if (FAILED(ps_error) || error_blob)
+    {
+        printf("%s\n", (char*)error_blob->lpVtbl->GetBufferPointer(error_blob));
+        __debugbreak();
+    }
+
+    HRESULT hr = D3DGetBlobPart(ID3DBlob_GetBufferPointer((*out_shader)->vs_code_blob), ID3DBlob_GetBufferSize((*out_shader)->vs_code_blob), D3D_BLOB_ROOT_SIGNATURE, 0, &(*out_shader)->signature_blob);
+    if (FAILED(hr))
+    {
+        D3D12_ROOT_SIGNATURE_DESC RootSignatureDesc = {
+            .NumParameters = 0,
+            .pParameters = 0,
+            .NumStaticSamplers = 0,
+            .pStaticSamplers = 0,
+            .Flags = D3D12_ROOT_SIGNATURE_FLAG_ALLOW_INPUT_ASSEMBLER_INPUT_LAYOUT
+        };
+        D3D12SerializeRootSignature(&RootSignatureDesc, D3D_ROOT_SIGNATURE_VERSION_1_0, &(*out_shader)->signature_blob, 0);
+        ID3D12Device_CreateRootSignature(device->device, 0, ID3DBlob_GetBufferPointer((*out_shader)->signature_blob),  ID3DBlob_GetBufferSize((*out_shader)->signature_blob), &IID_ID3D12RootSignature, &(*out_shader)->root_signature);
+    }
+    else
+    {
+        ID3D12Device_CreateRootSignature(device->device, 0, ID3DBlob_GetBufferPointer((*out_shader)->signature_blob),  ID3DBlob_GetBufferSize((*out_shader)->signature_blob), &IID_ID3D12RootSignature, &(*out_shader)->root_signature);
+    }
 
     return 0;
 }
@@ -432,7 +464,7 @@ void device_release_destroyed_objects(struct Device* device)
         return;
 
     size_t objects_to_release = 0;
-    while (fence_get_completed_value(device->main_fence) >= accessed_object_get_last_fence_value(device->destroyed_objects[objects_to_release]))
+    while ((objects_to_release < device->destroyed_objects_count) && (fence_get_completed_value(device->main_fence) >= accessed_object_get_last_fence_value(device->destroyed_objects[objects_to_release])))
     {
         struct Accessed_Object accessed_object = device->destroyed_objects[objects_to_release];
         for (int i = 0; i < accessed_object_get_releasable_object_count(accessed_object); i++)
@@ -673,6 +705,12 @@ void command_list_set_vertex_buffer(struct Command_List* command_list, struct Bu
     ID3D12GraphicsCommandList_IASetVertexBuffers(command_list->command_list_allocation->command_list, 0, 1, &vertex_buffer_view);
     command_list_append_accessed_buffers(command_list, ACCESSED_OBJECT(vertex_buffer));
 }
+void command_list_set_constant_buffer(struct Command_List* command_list, struct Buffer* constant_buffer, unsigned int root_parameter_index)
+{
+    command_list_set_buffer_state(command_list, constant_buffer, RESOURCE_STATE_CONSTANT_BUFFER);
+    ID3D12GraphicsCommandList_SetGraphicsRootConstantBufferView(command_list->command_list_allocation->command_list, root_parameter_index, ID3D12Resource_GetGPUVirtualAddress(constant_buffer->resource));
+    command_list_append_accessed_buffers(command_list, ACCESSED_OBJECT(constant_buffer));
+}
 void command_list_set_primitive_topology(struct Command_List* command_list, enum PRIMITIVE_TOPOLOGY primitive_topology)
 {
     ID3D12GraphicsCommandList_IASetPrimitiveTopology(command_list->command_list_allocation->command_list, to_d3d12_primitive_topology[primitive_topology]);
@@ -792,7 +830,10 @@ struct Buffer_Descriptor buffer_get_descriptor(struct Buffer* buffer)
     };
 }
 
-void upload_buffer_destroy(struct Upload_Buffer* upload_buffer);
+void upload_buffer_destroy(struct Upload_Buffer* upload_buffer)
+{
+    device_append_destroyed_objects(upload_buffer->device, ACCESSED_OBJECT(upload_buffer));
+}
 
 void pipeline_state_object_destroy(struct Pipeline_State_Object* pipeline_state_object);
 

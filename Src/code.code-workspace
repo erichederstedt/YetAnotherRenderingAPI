@@ -39,7 +39,8 @@
 			"iterator": "c",
 			"xhash": "c",
 			"xmemory": "c",
-			"xtree": "c"
+			"xtree": "c",
+			"*.rh": "c"
 		}
 	}
 }
