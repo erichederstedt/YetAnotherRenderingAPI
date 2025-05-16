@@ -20,4 +20,4 @@ Here is the status of some notable things being worked on.
 To install, download the main yara.h header and the accompanying backend files(ie, yara_d3d12.h and yara_d3d12.c for d3d12) and add them to your project.
 ## Usage
 To use it, add the wanted backend .c file to be compiled and linked and then you should be able to start writing code using the library.
-You can find examples on how to use it at *insert stuff here when finished*.
+You can find examples on how to use it at https://erichederstedt.github.io/GPUTechniques/ or https://github.com/erichederstedt/GPUTechniquesCode.
