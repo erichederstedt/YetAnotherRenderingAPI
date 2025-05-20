@@ -113,6 +113,35 @@ IUnknown** accessed_object_get_releasable_object(struct Accessed_Object accessed
     releasable_object += index;
     return releasable_object;
 }
+unsigned long long accessed_object_get_ref_count(struct Accessed_Object accessed_object)
+{
+    char* object = (char*)accessed_object.object;
+    object += sizeof(unsigned long long);
+    object += sizeof(IUnknown*) * accessed_object_get_releasable_object_count(accessed_object);
+    object += sizeof(unsigned long long);
+    return *(unsigned long long*)(object);
+}
+void accessed_object_inc_ref_count(struct Accessed_Object accessed_object)
+{
+    char* object = (char*)accessed_object.object;
+    object += sizeof(unsigned long long);
+    object += sizeof(IUnknown*) * accessed_object_get_releasable_object_count(accessed_object);
+    object += sizeof(unsigned long long);
+    unsigned long long* ref_count = (unsigned long long*)(object);
+    *ref_count += 1;
+}
+void accessed_object_dec_ref_count(struct Accessed_Object accessed_object)
+{
+    if (accessed_object_get_ref_count(accessed_object) == 0)
+        return;
+
+    char* object = (char*)accessed_object.object;
+    object += sizeof(unsigned long long);
+    object += sizeof(IUnknown*) * accessed_object_get_releasable_object_count(accessed_object);
+    object += sizeof(unsigned long long);
+    unsigned long long* ref_count = (unsigned long long*)(object);
+    *ref_count -= 1;
+}
 
 void device_destroy(struct Device* device)
 {
@@ -194,6 +223,7 @@ int device_create_descriptor_set(struct Device* device, enum DESCRIPTOR_TYPE des
 {
     *out_descriptor_set = alloc(sizeof(struct Descriptor_Set));
     (*out_descriptor_set)->releasable_objects = 1;
+    (*out_descriptor_set)->ref_count = 1;
 
     D3D12_DESCRIPTOR_HEAP_DESC descriptor_heap_description = {
         .NumDescriptors = (UINT)descriptor_count,
@@ -212,6 +242,7 @@ int device_create_buffer(struct Device* device, struct Buffer_Descriptor buffer_
     *out_buffer = alloc(sizeof(struct Buffer));
     (*out_buffer)->device = device;
     (*out_buffer)->releasable_objects = 1;
+    (*out_buffer)->ref_count = 1;
     (*out_buffer)->size = buffer_description.width * buffer_description.height;
 
     D3D12_HEAP_PROPERTIES defaultHeapProperties = {
@@ -279,6 +310,7 @@ int device_create_upload_buffer(struct Device* device, void* data, size_t data_s
 {
     *out_upload_buffer = alloc(sizeof(struct Upload_Buffer));
     (*out_upload_buffer)->releasable_objects = 1;
+    (*out_upload_buffer)->ref_count = 1;
 
     (*out_upload_buffer)->device = device;
 
@@ -313,6 +345,7 @@ int device_create_shader(struct Device* device, struct Shader** out_shader)
 {
     *out_shader = alloc(sizeof(struct Shader));
     (*out_shader)->releasable_objects = 4;
+    (*out_shader)->ref_count = 1;
 
     // D3D12_ROOT_SIGNATURE_DESC RootSignatureDesc = {
     //     .NumParameters = 0,
@@ -362,6 +395,7 @@ int device_create_pipeline_state_object(struct Device* device, struct Pipeline_S
 {
     *out_pipeline_state_object = alloc(sizeof(struct Pipeline_State_Object));
     (*out_pipeline_state_object)->releasable_objects = 1;
+    (*out_pipeline_state_object)->ref_count = 1;
 
     D3D12_INPUT_ELEMENT_DESC* input_elements = _alloca(sizeof(D3D12_INPUT_ELEMENT_DESC) * descriptor.input_element_descriptors_count);
     for (unsigned int i = 0; i < descriptor.input_element_descriptors_count; i++)
@@ -452,6 +486,7 @@ int device_create_fence(struct Device* device, struct Fence** out_fence)
 {
     *out_fence = alloc(sizeof(struct Fence));
     (*out_fence)->releasable_objects = 1;
+    (*out_fence)->ref_count = 1;
 
     ID3D12Device_CreateFence(device->device, (*out_fence)->value, D3D12_FENCE_FLAG_NONE, &IID_ID3D12Fence, &(*out_fence)->fence);
     (*out_fence)->event = CreateEventA(0, 0, FALSE, 0);
@@ -481,6 +516,11 @@ void device_release_destroyed_objects(struct Device* device)
 }
 void device_append_destroyed_objects(struct Device* device, struct Accessed_Object accessed_object)
 {
+    accessed_object_dec_ref_count(accessed_object);
+    unsigned long long ref_count = accessed_object_get_ref_count(accessed_object);
+    if (ref_count != 0)
+        return;
+
     if(device->destroyed_objects_count == device->destroyed_objects_size)
     {
         struct Accessed_Object* new_buffer = alloc(sizeof(struct Accessed_Object) * device->destroyed_objects_size * 2);
@@ -577,6 +617,8 @@ void command_queue_execute(struct Command_Queue* command_queue, struct Command_L
         {
             struct Accessed_Object accessed_object = command_list->accessed_objects[j];
             accessed_object_set_last_fence_value(accessed_object, fence_value);
+            
+            device_append_destroyed_objects(command_queue->device, accessed_object);
         }
     }
     
@@ -597,6 +639,7 @@ int swapchain_create_backbuffers(struct Swapchain* swapchain, struct Device* dev
         buffer->last_known_state = RESOURCE_STATE_PRESENT;
         buffer->device = device;
         buffer->releasable_objects = 1;
+        buffer->ref_count = 1;
 
         IDXGISwapChain3_GetBuffer(swapchain->swapchain, i, &IID_ID3D12Resource, &buffer->resource);
         ID3D12Device_CreateRenderTargetView(device->device, buffer->resource, 0, buffer->handles[D3D12_DESCRIPTOR_HEAP_TYPE_RTV].cpu_descriptor_handle);
@@ -647,12 +690,12 @@ void command_list_reset(struct Command_List* command_list)
 void command_list_set_pipeline_state_object(struct Command_List* command_list, struct Pipeline_State_Object* pipeline_state_object)
 {
     ID3D12GraphicsCommandList_SetPipelineState(command_list->command_list_allocation->command_list, pipeline_state_object->pipeline_state_object);
-    command_list_append_accessed_buffers(command_list, ACCESSED_OBJECT(pipeline_state_object));
+    command_list_append_accessed_object(command_list, ACCESSED_OBJECT(pipeline_state_object));
 }
 void command_list_set_shader(struct Command_List* command_list, struct Shader* shader)
 {
     ID3D12GraphicsCommandList_SetGraphicsRootSignature(command_list->command_list_allocation->command_list, shader->root_signature);
-    command_list_append_accessed_buffers(command_list, ACCESSED_OBJECT(shader));
+    command_list_append_accessed_object(command_list, ACCESSED_OBJECT(shader));
 }
 void command_list_set_viewport(struct Command_List* command_list, struct Viewport viewport)
 {
@@ -683,7 +726,7 @@ void command_list_set_render_targets(struct Command_List* command_list, struct B
     {
         command_list_set_buffer_state(command_list, render_targets[i], RESOURCE_STATE_RENDER_TARGET);
         handles[i] = render_targets[i]->handles[D3D12_DESCRIPTOR_HEAP_TYPE_RTV].cpu_descriptor_handle;
-        command_list_append_accessed_buffers(command_list, ACCESSED_OBJECT(render_targets[i]));
+        command_list_append_accessed_object(command_list, ACCESSED_OBJECT(render_targets[i]));
     }
     
     ID3D12GraphicsCommandList_OMSetRenderTargets(command_list->command_list_allocation->command_list, render_targets_count, (const D3D12_CPU_DESCRIPTOR_HANDLE*)handles, 0, (const D3D12_CPU_DESCRIPTOR_HANDLE*)(opt_depth_buffer ? &opt_depth_buffer->handles[D3D12_DESCRIPTOR_HEAP_TYPE_DSV].cpu_descriptor_handle : 0));
@@ -692,7 +735,7 @@ void command_list_clear_render_target(struct Command_List* command_list, struct 
 {
     command_list_set_buffer_state(command_list, render_target, RESOURCE_STATE_RENDER_TARGET);
     ID3D12GraphicsCommandList_ClearRenderTargetView(command_list->command_list_allocation->command_list, render_target->handles[D3D12_DESCRIPTOR_HEAP_TYPE_RTV].cpu_descriptor_handle, clear_color, 0, 0);
-    command_list_append_accessed_buffers(command_list, ACCESSED_OBJECT(render_target));
+    command_list_append_accessed_object(command_list, ACCESSED_OBJECT(render_target));
 }
 void command_list_set_vertex_buffer(struct Command_List* command_list, struct Buffer* vertex_buffer, size_t size, size_t stride)
 {
@@ -703,7 +746,7 @@ void command_list_set_vertex_buffer(struct Command_List* command_list, struct Bu
         .StrideInBytes = (UINT)stride
     };
     ID3D12GraphicsCommandList_IASetVertexBuffers(command_list->command_list_allocation->command_list, 0, 1, &vertex_buffer_view);
-    command_list_append_accessed_buffers(command_list, ACCESSED_OBJECT(vertex_buffer));
+    command_list_append_accessed_object(command_list, ACCESSED_OBJECT(vertex_buffer));
 }
 void command_list_set_index_buffer(struct Command_List* command_list, struct Buffer* index_buffer, size_t size, enum FORMAT format)
 {
@@ -714,13 +757,13 @@ void command_list_set_index_buffer(struct Command_List* command_list, struct Buf
         .Format = to_d3d12_format[format]
     };
     ID3D12GraphicsCommandList_IASetIndexBuffer(command_list->command_list_allocation->command_list, &index_buffer_view);
-    command_list_append_accessed_buffers(command_list, ACCESSED_OBJECT(index_buffer));
+    command_list_append_accessed_object(command_list, ACCESSED_OBJECT(index_buffer));
 }
 void command_list_set_constant_buffer(struct Command_List* command_list, struct Buffer* constant_buffer, unsigned int root_parameter_index)
 {
     command_list_set_buffer_state(command_list, constant_buffer, RESOURCE_STATE_CONSTANT_BUFFER);
     ID3D12GraphicsCommandList_SetGraphicsRootConstantBufferView(command_list->command_list_allocation->command_list, root_parameter_index, ID3D12Resource_GetGPUVirtualAddress(constant_buffer->resource));
-    command_list_append_accessed_buffers(command_list, ACCESSED_OBJECT(constant_buffer));
+    command_list_append_accessed_object(command_list, ACCESSED_OBJECT(constant_buffer));
 }
 void command_list_set_primitive_topology(struct Command_List* command_list, enum PRIMITIVE_TOPOLOGY primitive_topology)
 {
@@ -738,8 +781,8 @@ void command_list_copy_upload_buffer_to_buffer(struct Command_List* command_list
 {
     command_list_set_buffer_state(command_list, dst, RESOURCE_STATE_COPY_DEST);
     ID3D12GraphicsCommandList_CopyResource(command_list->command_list_allocation->command_list, dst->resource, src->resource);
-    command_list_append_accessed_buffers(command_list, ACCESSED_OBJECT(dst));
-    command_list_append_accessed_buffers(command_list, ACCESSED_OBJECT(src));
+    command_list_append_accessed_object(command_list, ACCESSED_OBJECT(dst));
+    command_list_append_accessed_object(command_list, ACCESSED_OBJECT(src));
 }
 void command_list_set_buffer_state(struct Command_List* command_list, struct Buffer* buffer, enum RESOURCE_STATE to_state)
 {
@@ -773,7 +816,7 @@ void command_list_set_buffer_state(struct Command_List* command_list, struct Buf
     };
     ID3D12GraphicsCommandList_ResourceBarrier(command_list->command_list_allocation->command_list, ARRAY_COUNT(resource_barriers), resource_barriers);
     command_list->buffer_states[buffer_state_index].state = to_state;
-    command_list_append_accessed_buffers(command_list, ACCESSED_OBJECT(buffer));
+    command_list_append_accessed_object(command_list, ACCESSED_OBJECT(buffer));
 }
 int command_list_close(struct Command_List* command_list)
 {
@@ -804,7 +847,7 @@ void command_list_append_required_buffer_state(struct Command_List* command_list
 
     command_list->required_buffer_states[command_list->required_buffer_states_count++] = buffer_state;
 }
-void command_list_append_accessed_buffers(struct Command_List* command_list, struct Accessed_Object buffer)
+void command_list_append_accessed_object(struct Command_List* command_list, struct Accessed_Object buffer)
 {
     if(command_list->accessed_objects_count == command_list->accessed_objects_size)
     {
@@ -815,6 +858,7 @@ void command_list_append_accessed_buffers(struct Command_List* command_list, str
     }
 
     command_list->accessed_objects[command_list->accessed_objects_count++] = buffer;
+    accessed_object_inc_ref_count(buffer);
 }
 
 void descriptor_set_destroy(struct Descriptor_Set* descriptor_set);

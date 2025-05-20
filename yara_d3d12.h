@@ -112,6 +112,7 @@ struct Descriptor_Set
     unsigned long long releasable_objects;
     ID3D12DescriptorHeap* descriptor_heap;
     unsigned long long last_used_fence_value;
+    unsigned long long ref_count;
 
     unsigned int descriptor_count;
     unsigned int descriptor_size;
@@ -127,6 +128,7 @@ struct Buffer
     unsigned long long releasable_objects;
     ID3D12Resource* resource;
     unsigned long long last_used_fence_value;
+    unsigned long long ref_count;
 
     struct Descriptor_Handle handles[D3D12_DESCRIPTOR_HEAP_TYPE_NUM_TYPES];
     enum RESOURCE_STATES last_known_state;
@@ -138,6 +140,7 @@ struct Upload_Buffer
     unsigned long long releasable_objects;
     ID3D12Resource* resource;
     unsigned long long last_used_fence_value;
+    unsigned long long ref_count;
 
     D3D12_VERTEX_BUFFER_VIEW vertex_buffer_view;
     struct Device* device;
@@ -150,18 +153,21 @@ struct Shader
     ID3DBlob* vs_code_blob;
     ID3DBlob* ps_code_blob;
     unsigned long long last_used_fence_value;
+    unsigned long long ref_count;
 };
 struct Pipeline_State_Object
 {
     unsigned long long releasable_objects;
     ID3D12PipelineState* pipeline_state_object;
     unsigned long long last_used_fence_value;
+    unsigned long long ref_count;
 };
 struct Fence
 {
     unsigned long long releasable_objects;
     ID3D12Fence* fence;
     unsigned long long last_used_fence_value;
+    unsigned long long ref_count;
 
     unsigned long long value;
     HANDLE event;
@@ -527,7 +533,7 @@ struct Descriptor_Handle descriptor_set_alloc(struct Descriptor_Set* descriptor_
 
 void command_list_append_buffer_state(struct Command_List* command_list, struct Buffer_State buffer_state);
 void command_list_append_required_buffer_state(struct Command_List* command_list, struct Buffer_State buffer_state);
-void command_list_append_accessed_buffers(struct Command_List* command_list, struct Accessed_Object buffer);
+void command_list_append_accessed_object(struct Command_List* command_list, struct Accessed_Object buffer);
 
 struct Command_List_Allocator command_list_allocator_create(struct Device* device);
 void command_list_allocator_increment_index(struct Command_List_Allocator* command_list_allocator);
