@@ -308,6 +308,8 @@ struct Swapchain_Descriptor
     void* window;
     unsigned int backbuffer_count;
     enum FORMAT format;
+    unsigned long long width;
+    unsigned long long height;
 };
 struct Buffer_Descriptor
 {
@@ -318,6 +320,7 @@ struct Buffer_Descriptor
     enum BUFFER_TYPE buffer_type;
     enum BIND_TYPE bind_types[_BIND_TYPE_COUNT];
     size_t bind_types_count;
+    enum FORMAT format;
 };
 struct Input_Element_Descriptor
 {
@@ -450,6 +453,7 @@ void command_list_set_viewport(struct Command_List* command_list, struct Viewpor
 void command_list_set_scissor_rect(struct Command_List* command_list, struct Rect scissor_rect);
 void command_list_set_render_targets(struct Command_List* command_list, struct Buffer* render_targets[], int render_targets_count, struct Buffer* opt_depth_buffer/* = 0*/);
 void command_list_clear_render_target(struct Command_List* command_list, struct Buffer* render_target, float clear_color[4]);
+void command_list_clear_depth_target(struct Command_List* command_list, struct Buffer* depth_buffer, float depth, int should_clear_stencil, unsigned char stencil);
 void command_list_set_vertex_buffer(struct Command_List* command_list, struct Buffer* vertex_buffer, size_t size, size_t stride);
 void command_list_set_index_buffer(struct Command_List* command_list, struct Buffer* index_buffer, size_t size, enum FORMAT format);
 void command_list_set_constant_buffer(struct Command_List* command_list, struct Buffer* constant_buffer, unsigned int root_parameter_index);

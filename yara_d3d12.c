@@ -254,9 +254,9 @@ int device_create_buffer(struct Device* device, struct Buffer_Descriptor buffer_
         .Height = (UINT)buffer_description.height,
         .DepthOrArraySize = 1,
         .MipLevels = 1,
-        .Format = DXGI_FORMAT_UNKNOWN,
+        .Format = to_d3d12_format[buffer_description.format],
         .SampleDesc.Count = 1,
-        .Layout = D3D12_TEXTURE_LAYOUT_ROW_MAJOR,
+        .Layout = (buffer_description.buffer_type != BUFFER_TYPE_BUFFER) ? 0 : D3D12_TEXTURE_LAYOUT_ROW_MAJOR,
         .Flags = D3D12_RESOURCE_FLAG_NONE
     };
     switch (buffer_description.buffer_type)
@@ -302,6 +302,11 @@ int device_create_buffer(struct Device* device, struct Buffer_Descriptor buffer_
     {
         struct Descriptor_Set* descriptor_set = buffer_description.descriptor_sets[i];
         (*out_buffer)->handles[to_yara_descriptor_type[descriptor_set->descriptor_heap_type]] = descriptor_set_alloc(descriptor_set);
+    }
+
+    if (dsv)
+    {
+        ID3D12Device_CreateDepthStencilView(device->device, (*out_buffer)->resource, 0, (*out_buffer)->handles[DESCRIPTOR_TYPE_DSV].cpu_descriptor_handle);
     }
     
     return 0;
@@ -672,7 +677,9 @@ struct Swapchain_Descriptor swapchain_get_descriptor(struct Swapchain* swapchain
     return (struct Swapchain_Descriptor){
         .backbuffer_count = d3d12_swapchain_description.BufferCount,
         .window = 0,
-        .format = to_yara_format[d3d12_swapchain_description.Format]
+        .format = to_yara_format[d3d12_swapchain_description.Format],
+        .width = (unsigned long long)d3d12_swapchain_description.Width,
+        .height = (unsigned long long)d3d12_swapchain_description.Height,
     };
 }
 
@@ -736,6 +743,17 @@ void command_list_clear_render_target(struct Command_List* command_list, struct 
     command_list_set_buffer_state(command_list, render_target, RESOURCE_STATE_RENDER_TARGET);
     ID3D12GraphicsCommandList_ClearRenderTargetView(command_list->command_list_allocation->command_list, render_target->handles[D3D12_DESCRIPTOR_HEAP_TYPE_RTV].cpu_descriptor_handle, clear_color, 0, 0);
     command_list_append_accessed_object(command_list, ACCESSED_OBJECT(render_target));
+}
+void command_list_clear_depth_target(struct Command_List* command_list, struct Buffer* depth_buffer, float depth, int should_clear_stencil, unsigned char stencil)
+{
+    command_list_set_buffer_state(command_list, depth_buffer, RESOURCE_STATE_DEPTH);
+
+    D3D12_CLEAR_FLAGS clear_flags = D3D12_CLEAR_FLAG_DEPTH;
+    if (should_clear_stencil)
+        clear_flags |= D3D12_CLEAR_FLAG_STENCIL;
+
+    ID3D12GraphicsCommandList_ClearDepthStencilView(command_list->command_list_allocation->command_list, depth_buffer->handles[D3D12_DESCRIPTOR_HEAP_TYPE_DSV].cpu_descriptor_handle, clear_flags, depth, stencil, 0, 0);
+    command_list_append_accessed_object(command_list, ACCESSED_OBJECT(depth_buffer));
 }
 void command_list_set_vertex_buffer(struct Command_List* command_list, struct Buffer* vertex_buffer, size_t size, size_t stride)
 {
