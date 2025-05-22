@@ -134,6 +134,7 @@ struct Buffer
     enum RESOURCE_STATES last_known_state;
     struct Device* device;
     unsigned long long size;
+    enum BUFFER_TYPE buffer_type;
 };
 struct Upload_Buffer
 {
@@ -142,7 +143,6 @@ struct Upload_Buffer
     unsigned long long last_used_fence_value;
     unsigned long long ref_count;
 
-    D3D12_VERTEX_BUFFER_VIEW vertex_buffer_view;
     struct Device* device;
 };
 struct Shader
@@ -522,6 +522,10 @@ static D3D12_PRIMITIVE_TOPOLOGY_TYPE to_d3d12_primitive_topology_type[_PRIMITIVE
     D3D12_PRIMITIVE_TOPOLOGY_TYPE_LINE,
     D3D12_PRIMITIVE_TOPOLOGY_TYPE_TRIANGLE,
     D3D12_PRIMITIVE_TOPOLOGY_TYPE_PATCH
+};
+static D3D12_RESOURCE_DIMENSION to_d3d12_resource_dimension[_BUFFER_TYPE_COUNT] = {
+    D3D12_RESOURCE_DIMENSION_BUFFER,
+    D3D12_RESOURCE_DIMENSION_TEXTURE2D
 };
 
 struct Command_List_Allocation* device_create_command_list_allocation(struct Device* device);

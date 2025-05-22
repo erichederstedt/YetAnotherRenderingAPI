@@ -34,7 +34,8 @@ enum BIND_TYPE
 enum BUFFER_TYPE
 {
     BUFFER_TYPE_BUFFER,
-    BUFFER_TYPE_TEXTRUE2D
+    BUFFER_TYPE_TEXTRUE2D,
+    _BUFFER_TYPE_COUNT
 };
 enum RESOURCE_STATE
 {
@@ -431,7 +432,7 @@ int device_create_swapchain(struct Device* device, struct Command_Queue* command
 int device_create_command_list(struct Device* device, struct Command_List** out_command_list);
 int device_create_descriptor_set(struct Device* device, enum DESCRIPTOR_TYPE descriptor_type, size_t descriptor_count, struct Descriptor_Set** out_descriptor_set);
 int device_create_buffer(struct Device* device, struct Buffer_Descriptor buffer_description, struct Buffer** out_buffer);
-int device_create_upload_buffer(struct Device* device, void* data, size_t data_size, struct Upload_Buffer** out_upload_buffer);
+int device_create_upload_buffer(struct Device* device, void* opt_data, unsigned long long data_size, struct Upload_Buffer** out_upload_buffer);
 int device_create_shader(struct Device* device, struct Shader** out_shader);
 int device_create_pipeline_state_object(struct Device* device, struct Pipeline_State_Object_Descriptor descriptor, struct Pipeline_State_Object** out_pipeline_state_object);
 int device_create_fence(struct Device* device, struct Fence** out_fence);
@@ -470,6 +471,8 @@ void buffer_destroy(struct Buffer* buffer);
 struct Buffer_Descriptor buffer_get_descriptor(struct Buffer* buffer);
 
 void upload_buffer_destroy(struct Upload_Buffer* upload_buffer);
+void* upload_buffer_map(struct Upload_Buffer* upload_buffer);
+void upload_buffer_unmap(struct Upload_Buffer* upload_buffer);
 
 void pipeline_state_object_destroy(struct Pipeline_State_Object* pipeline_state_object);
 

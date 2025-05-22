@@ -244,6 +244,7 @@ int device_create_buffer(struct Device* device, struct Buffer_Descriptor buffer_
     (*out_buffer)->releasable_objects = 1;
     (*out_buffer)->ref_count = 1;
     (*out_buffer)->size = buffer_description.width * buffer_description.height;
+    (*out_buffer)->buffer_type = buffer_description.buffer_type;
 
     D3D12_HEAP_PROPERTIES defaultHeapProperties = {
         .Type = D3D12_HEAP_TYPE_DEFAULT
@@ -257,17 +258,9 @@ int device_create_buffer(struct Device* device, struct Buffer_Descriptor buffer_
         .Format = to_d3d12_format[buffer_description.format],
         .SampleDesc.Count = 1,
         .Layout = (buffer_description.buffer_type != BUFFER_TYPE_BUFFER) ? 0 : D3D12_TEXTURE_LAYOUT_ROW_MAJOR,
-        .Flags = D3D12_RESOURCE_FLAG_NONE
+        .Flags = D3D12_RESOURCE_FLAG_NONE,
+        .Dimension = to_d3d12_resource_dimension[buffer_description.buffer_type]
     };
-    switch (buffer_description.buffer_type)
-    {
-    case BUFFER_TYPE_BUFFER:
-	resource_desc.Dimension = D3D12_RESOURCE_DIMENSION_BUFFER;
-        break;
-    case BUFFER_TYPE_TEXTRUE2D:
-	resource_desc.Dimension = D3D12_RESOURCE_DIMENSION_TEXTURE2D;
-        break;
-    }
 
     int uav = 0;
     int dsv = 0;
@@ -311,7 +304,7 @@ int device_create_buffer(struct Device* device, struct Buffer_Descriptor buffer_
     
     return 0;
 }
-int device_create_upload_buffer(struct Device* device, void* data, size_t data_size, struct Upload_Buffer** out_upload_buffer)
+int device_create_upload_buffer(struct Device* device, void* opt_data, unsigned long long data_size, struct Upload_Buffer** out_upload_buffer)
 {
     *out_upload_buffer = alloc(sizeof(struct Upload_Buffer));
     (*out_upload_buffer)->releasable_objects = 1;
@@ -325,23 +318,25 @@ int device_create_upload_buffer(struct Device* device, void* data, size_t data_s
         .MemoryPoolPreference = D3D12_MEMORY_POOL_UNKNOWN
     };
     D3D12_RESOURCE_DESC ResourceDesc = {
-        .Dimension = D3D12_RESOURCE_DIMENSION_BUFFER,
+        .Dimension = to_d3d12_resource_dimension[BUFFER_TYPE_BUFFER],
         .Alignment = 0, 
-        .Width = data_size,
+        .Width = (UINT64)data_size,
         .Height = 1,
         .DepthOrArraySize = 1,
         .MipLevels = 1,
-        .Format = DXGI_FORMAT_UNKNOWN,
+        .Format = to_d3d12_format[FORMAT_UNKNOWN],
         .SampleDesc.Count = 1,
         .Layout = D3D12_TEXTURE_LAYOUT_ROW_MAJOR,
         .Flags = D3D12_RESOURCE_FLAG_NONE
     };
     ID3D12Device_CreateCommittedResource(device->device, &UploadHeapProperties, D3D12_HEAP_FLAG_NONE, &ResourceDesc, D3D12_RESOURCE_STATE_GENERIC_READ, 0, &IID_ID3D12Resource, &(*out_upload_buffer)->resource);
-    D3D12_RANGE ReadRange = {0};
-    void *MappedAddress = 0;
-    ID3D12Resource_Map((*out_upload_buffer)->resource, 0, &ReadRange, &MappedAddress);
-    memcpy(MappedAddress, data, data_size);
-    ID3D12Resource_Unmap((*out_upload_buffer)->resource, 0, 0);
+
+    if (opt_data)
+    {
+        void* mapped = upload_buffer_map(*out_upload_buffer);
+        memcpy(mapped, opt_data, data_size);
+        upload_buffer_unmap(*out_upload_buffer);
+    }
 
     return 0;
 }
@@ -798,7 +793,36 @@ void command_list_draw_indexed_instanced(struct Command_List* command_list, size
 void command_list_copy_upload_buffer_to_buffer(struct Command_List* command_list, struct Upload_Buffer* src, struct Buffer* dst)
 {
     command_list_set_buffer_state(command_list, dst, RESOURCE_STATE_COPY_DEST);
-    ID3D12GraphicsCommandList_CopyResource(command_list->command_list_allocation->command_list, dst->resource, src->resource);
+
+    if (dst->buffer_type == BUFFER_TYPE_BUFFER)
+    {
+        ID3D12GraphicsCommandList_CopyResource(command_list->command_list_allocation->command_list, dst->resource, src->resource);
+    }
+    else
+    {
+        D3D12_TEXTURE_COPY_LOCATION dstLocation = {0};
+        dstLocation.pResource = dst->resource;
+        dstLocation.Type = D3D12_TEXTURE_COPY_TYPE_SUBRESOURCE_INDEX;
+        dstLocation.SubresourceIndex = 0;
+
+        D3D12_RESOURCE_DESC textureDesc = {0};
+        ID3D12Resource_GetDesc(dst->resource, &textureDesc);
+
+        D3D12_PLACED_SUBRESOURCE_FOOTPRINT layout = {0};
+        UINT64 uploadBufferSize;
+        UINT numRows;
+        UINT64 rowSizeInBytes;
+        command_list->device->device->lpVtbl->GetCopyableFootprints(command_list->device->device, &textureDesc, 0, 1, 0, &layout, &numRows, &rowSizeInBytes, &uploadBufferSize);
+
+        D3D12_TEXTURE_COPY_LOCATION srcLocation = {0};
+        srcLocation.pResource = src->resource;
+        srcLocation.Type = D3D12_TEXTURE_COPY_TYPE_PLACED_FOOTPRINT;
+        srcLocation.PlacedFootprint = layout;
+
+        // ( (command_list->command_list_allocation->command_list)->lpVtbl -> CopyTextureRegion(command_list->command_list_allocation->command_list, &dstLocation, 0, 0, 0, &srcLocation, 0) );
+        ID3D12GraphicsCommandList_CopyTextureRegion(command_list->command_list_allocation->command_list, &dstLocation, 0, 0, 0, &srcLocation, 0);
+    }
+    
     command_list_append_accessed_object(command_list, ACCESSED_OBJECT(dst));
     command_list_append_accessed_object(command_list, ACCESSED_OBJECT(src));
 }
@@ -910,6 +934,17 @@ struct Buffer_Descriptor buffer_get_descriptor(struct Buffer* buffer)
 void upload_buffer_destroy(struct Upload_Buffer* upload_buffer)
 {
     device_append_destroyed_objects(upload_buffer->device, ACCESSED_OBJECT(upload_buffer));
+}
+void* upload_buffer_map(struct Upload_Buffer* upload_buffer)
+{
+    D3D12_RANGE read_range = {0};
+    void *mapped_address = 0;
+    ID3D12Resource_Map(upload_buffer->resource, 0, &read_range, &mapped_address);
+    return mapped_address;
+}
+void upload_buffer_unmap(struct Upload_Buffer* upload_buffer)
+{
+    ID3D12Resource_Unmap(upload_buffer->resource, 0, 0);
 }
 
 void pipeline_state_object_destroy(struct Pipeline_State_Object* pipeline_state_object);
