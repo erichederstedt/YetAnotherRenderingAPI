@@ -227,7 +227,7 @@ int device_create_descriptor_set(struct Device* device, enum DESCRIPTOR_TYPE des
 
     D3D12_DESCRIPTOR_HEAP_DESC descriptor_heap_description = {
         .NumDescriptors = (UINT)descriptor_count,
-        .Flags = D3D12_DESCRIPTOR_HEAP_FLAG_NONE,
+        .Flags = (descriptor_type == DESCRIPTOR_TYPE_CBV_SRV_UAV || descriptor_type == DESCRIPTOR_TYPE_SAMPLER) ? D3D12_DESCRIPTOR_HEAP_FLAG_SHADER_VISIBLE : D3D12_DESCRIPTOR_HEAP_FLAG_NONE,
         .NodeMask = 0,
         .Type = to_d3d12_descriptor_type[descriptor_type]
     };
@@ -777,6 +777,13 @@ void command_list_set_constant_buffer(struct Command_List* command_list, struct 
     command_list_set_buffer_state(command_list, constant_buffer, RESOURCE_STATE_CONSTANT_BUFFER);
     ID3D12GraphicsCommandList_SetGraphicsRootConstantBufferView(command_list->command_list_allocation->command_list, root_parameter_index, ID3D12Resource_GetGPUVirtualAddress(constant_buffer->resource));
     command_list_append_accessed_object(command_list, ACCESSED_OBJECT(constant_buffer));
+}
+void command_list_set_texture_buffer(struct Command_List* command_list, struct Buffer* texture_buffer, unsigned int root_parameter_index)
+{
+    command_list_set_buffer_state(command_list, texture_buffer, RESOURCE_STATE_STRUCTURED_BUFFER);
+    // ID3D12GraphicsCommandList_SetGraphicsRootShaderResourceView(command_list->command_list_allocation->command_list, root_parameter_index, ID3D12Resource_GetGPUVirtualAddress(texture_buffer->resource));
+    ID3D12GraphicsCommandList_SetGraphicsRootDescriptorTable(command_list->command_list_allocation->command_list, root_parameter_index, texture_buffer->handles[D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV].gpu_descriptor_handle);
+    command_list_append_accessed_object(command_list, ACCESSED_OBJECT(texture_buffer));
 }
 void command_list_set_primitive_topology(struct Command_List* command_list, enum PRIMITIVE_TOPOLOGY primitive_topology)
 {
