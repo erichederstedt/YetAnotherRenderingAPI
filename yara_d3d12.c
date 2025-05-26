@@ -291,17 +291,6 @@ int device_create_buffer(struct Device* device, struct Buffer_Descriptor buffer_
     result;
     (*out_buffer)->last_known_state = RESOURCE_STATE_COPY_DEST;
     
-    for (size_t i = 0; i < buffer_description.descriptor_sets_count; i++)
-    {
-        struct Descriptor_Set* descriptor_set = buffer_description.descriptor_sets[i];
-        (*out_buffer)->handles[to_yara_descriptor_type[descriptor_set->descriptor_heap_type]] = descriptor_set_alloc(descriptor_set);
-    }
-
-    if (dsv)
-    {
-        ID3D12Device_CreateDepthStencilView(device->device, (*out_buffer)->resource, 0, (*out_buffer)->handles[DESCRIPTOR_TYPE_DSV].cpu_descriptor_handle);
-    }
-    
     return 0;
 }
 int device_create_upload_buffer(struct Device* device, void* opt_data, unsigned long long data_size, struct Upload_Buffer** out_upload_buffer)
@@ -626,23 +615,21 @@ void command_queue_execute(struct Command_Queue* command_queue, struct Command_L
 }
 
 void swapchain_destroy(struct Swapchain* swapchain);
-int swapchain_create_backbuffers(struct Swapchain* swapchain, struct Device* device, struct Descriptor_Set* rtv_descriptor_set, struct Buffer** out_buffers)
+int swapchain_create_backbuffers(struct Swapchain* swapchain, struct Device* device, struct Descriptor_Set* rtv_descriptor_set, struct Render_Target_View** out_rtvs)
 {
-    memset(out_buffers, 0, sizeof(struct Buffer*) * swapchain->swapchain_descriptor.backbuffer_count);
+    memset(out_rtvs, 0, sizeof(struct Render_Target_View*) * swapchain->swapchain_descriptor.backbuffer_count);
 
     for (unsigned int i = 0; i < swapchain->swapchain_descriptor.backbuffer_count; i++)
     {
-        out_buffers[i] = alloc(sizeof(struct Buffer));
-        struct Buffer* buffer = out_buffers[i];
+        struct Buffer* buffer = alloc(sizeof(struct Buffer));
 
-        buffer->handles[D3D12_DESCRIPTOR_HEAP_TYPE_RTV] = descriptor_set_alloc(rtv_descriptor_set);
         buffer->last_known_state = RESOURCE_STATE_PRESENT;
         buffer->device = device;
         buffer->releasable_objects = 1;
         buffer->ref_count = 1;
-
         IDXGISwapChain3_GetBuffer(swapchain->swapchain, i, &IID_ID3D12Resource, &buffer->resource);
-        ID3D12Device_CreateRenderTargetView(device->device, buffer->resource, 0, buffer->handles[D3D12_DESCRIPTOR_HEAP_TYPE_RTV].cpu_descriptor_handle);
+
+        device_create_render_target_view(device, 0, rtv_descriptor_set, buffer, &out_rtvs[i]);
     }
 
     return 0;
@@ -721,34 +708,34 @@ void command_list_set_scissor_rect(struct Command_List* command_list, struct Rec
     };
     ID3D12GraphicsCommandList_RSSetScissorRects(command_list->command_list_allocation->command_list, 1, &d3d12_scissor_rect);
 }
-void command_list_set_render_targets(struct Command_List* command_list, struct Buffer* render_targets[], int render_targets_count, struct Buffer* opt_depth_buffer)
+void command_list_set_render_targets(struct Command_List* command_list, struct Render_Target_View* render_targets[], int render_targets_count, struct Depth_Stencil_View* opt_depth_stencil_view)
 {
     D3D12_CPU_DESCRIPTOR_HANDLE* handles = _alloca(sizeof(D3D12_CPU_DESCRIPTOR_HANDLE) * render_targets_count);
     for (int i = 0; i < render_targets_count; i++)
     {
-        command_list_set_buffer_state(command_list, render_targets[i], RESOURCE_STATE_RENDER_TARGET);
-        handles[i] = render_targets[i]->handles[D3D12_DESCRIPTOR_HEAP_TYPE_RTV].cpu_descriptor_handle;
+        command_list_set_buffer_state(command_list, render_targets[i]->buffer, RESOURCE_STATE_RENDER_TARGET);
+        handles[i] = render_targets[i]->handle.cpu_descriptor_handle;
         command_list_append_accessed_object(command_list, ACCESSED_OBJECT(render_targets[i]));
     }
     
-    ID3D12GraphicsCommandList_OMSetRenderTargets(command_list->command_list_allocation->command_list, render_targets_count, (const D3D12_CPU_DESCRIPTOR_HANDLE*)handles, 0, (const D3D12_CPU_DESCRIPTOR_HANDLE*)(opt_depth_buffer ? &opt_depth_buffer->handles[D3D12_DESCRIPTOR_HEAP_TYPE_DSV].cpu_descriptor_handle : 0));
+    ID3D12GraphicsCommandList_OMSetRenderTargets(command_list->command_list_allocation->command_list, render_targets_count, (const D3D12_CPU_DESCRIPTOR_HANDLE*)handles, 0, (const D3D12_CPU_DESCRIPTOR_HANDLE*)(opt_depth_stencil_view ? &opt_depth_stencil_view->handle.cpu_descriptor_handle : 0));
 }
-void command_list_clear_render_target(struct Command_List* command_list, struct Buffer* render_target, float clear_color[4])
+void command_list_clear_render_target(struct Command_List* command_list, struct Render_Target_View* render_target, float clear_color[4])
 {
-    command_list_set_buffer_state(command_list, render_target, RESOURCE_STATE_RENDER_TARGET);
-    ID3D12GraphicsCommandList_ClearRenderTargetView(command_list->command_list_allocation->command_list, render_target->handles[D3D12_DESCRIPTOR_HEAP_TYPE_RTV].cpu_descriptor_handle, clear_color, 0, 0);
+    command_list_set_buffer_state(command_list, render_target->buffer, RESOURCE_STATE_RENDER_TARGET);
+    ID3D12GraphicsCommandList_ClearRenderTargetView(command_list->command_list_allocation->command_list, render_target->handle.cpu_descriptor_handle, clear_color, 0, 0);
     command_list_append_accessed_object(command_list, ACCESSED_OBJECT(render_target));
 }
-void command_list_clear_depth_target(struct Command_List* command_list, struct Buffer* depth_buffer, float depth, int should_clear_stencil, unsigned char stencil)
+void command_list_clear_depth_target(struct Command_List* command_list, struct Depth_Stencil_View* depth_stencil_view, float depth, int should_clear_stencil, unsigned char stencil)
 {
-    command_list_set_buffer_state(command_list, depth_buffer, RESOURCE_STATE_DEPTH);
+    command_list_set_buffer_state(command_list, depth_stencil_view->buffer, RESOURCE_STATE_DEPTH);
 
     D3D12_CLEAR_FLAGS clear_flags = D3D12_CLEAR_FLAG_DEPTH;
     if (should_clear_stencil)
         clear_flags |= D3D12_CLEAR_FLAG_STENCIL;
 
-    ID3D12GraphicsCommandList_ClearDepthStencilView(command_list->command_list_allocation->command_list, depth_buffer->handles[D3D12_DESCRIPTOR_HEAP_TYPE_DSV].cpu_descriptor_handle, clear_flags, depth, stencil, 0, 0);
-    command_list_append_accessed_object(command_list, ACCESSED_OBJECT(depth_buffer));
+    ID3D12GraphicsCommandList_ClearDepthStencilView(command_list->command_list_allocation->command_list, depth_stencil_view->handle.cpu_descriptor_handle, clear_flags, depth, stencil, 0, 0);
+    command_list_append_accessed_object(command_list, ACCESSED_OBJECT(depth_stencil_view));
 }
 void command_list_set_vertex_buffer(struct Command_List* command_list, struct Buffer* vertex_buffer, size_t size, size_t stride)
 {
@@ -772,18 +759,18 @@ void command_list_set_index_buffer(struct Command_List* command_list, struct Buf
     ID3D12GraphicsCommandList_IASetIndexBuffer(command_list->command_list_allocation->command_list, &index_buffer_view);
     command_list_append_accessed_object(command_list, ACCESSED_OBJECT(index_buffer));
 }
-void command_list_set_constant_buffer(struct Command_List* command_list, struct Buffer* constant_buffer, unsigned int root_parameter_index)
+void command_list_set_constant_buffer(struct Command_List* command_list, struct Constant_Buffer_View* constant_buffer_view, unsigned int root_parameter_index)
 {
-    command_list_set_buffer_state(command_list, constant_buffer, RESOURCE_STATE_CONSTANT_BUFFER);
-    ID3D12GraphicsCommandList_SetGraphicsRootConstantBufferView(command_list->command_list_allocation->command_list, root_parameter_index, ID3D12Resource_GetGPUVirtualAddress(constant_buffer->resource));
-    command_list_append_accessed_object(command_list, ACCESSED_OBJECT(constant_buffer));
+    command_list_set_buffer_state(command_list, constant_buffer_view->buffer, RESOURCE_STATE_CONSTANT_BUFFER);
+    ID3D12GraphicsCommandList_SetGraphicsRootConstantBufferView(command_list->command_list_allocation->command_list, root_parameter_index, ID3D12Resource_GetGPUVirtualAddress(constant_buffer_view->buffer->resource));
+    command_list_append_accessed_object(command_list, ACCESSED_OBJECT(constant_buffer_view->buffer));
 }
-void command_list_set_texture_buffer(struct Command_List* command_list, struct Buffer* texture_buffer, unsigned int root_parameter_index)
+void command_list_set_texture_buffer(struct Command_List* command_list, struct Shader_Resource_View* shader_resource_view, unsigned int root_parameter_index)
 {
-    command_list_set_buffer_state(command_list, texture_buffer, RESOURCE_STATE_STRUCTURED_BUFFER);
+    command_list_set_buffer_state(command_list, shader_resource_view->buffer, RESOURCE_STATE_STRUCTURED_BUFFER);
     // ID3D12GraphicsCommandList_SetGraphicsRootShaderResourceView(command_list->command_list_allocation->command_list, root_parameter_index, ID3D12Resource_GetGPUVirtualAddress(texture_buffer->resource));
-    ID3D12GraphicsCommandList_SetGraphicsRootDescriptorTable(command_list->command_list_allocation->command_list, root_parameter_index, texture_buffer->handles[D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV].gpu_descriptor_handle);
-    command_list_append_accessed_object(command_list, ACCESSED_OBJECT(texture_buffer));
+    ID3D12GraphicsCommandList_SetGraphicsRootDescriptorTable(command_list->command_list_allocation->command_list, root_parameter_index, shader_resource_view->handle.gpu_descriptor_handle);
+    command_list_append_accessed_object(command_list, ACCESSED_OBJECT(shader_resource_view->buffer));
 }
 void command_list_set_primitive_topology(struct Command_List* command_list, enum PRIMITIVE_TOPOLOGY primitive_topology)
 {
@@ -952,6 +939,136 @@ void* upload_buffer_map(struct Upload_Buffer* upload_buffer)
 void upload_buffer_unmap(struct Upload_Buffer* upload_buffer)
 {
     ID3D12Resource_Unmap(upload_buffer->resource, 0, 0);
+}
+
+void device_create_shader_resource_view(struct Device* device, struct Shader_Resource_View_Descriptor* opt_descriptor, struct Descriptor_Set* descriptor_set, struct Buffer* buffer, struct Shader_Resource_View** out_shader_resource_view)
+{
+    (*out_shader_resource_view) = alloc(sizeof(struct Shader_Resource_View));
+    (*out_shader_resource_view)->releasable_objects = 0;
+    (*out_shader_resource_view)->ref_count = 1;
+    (*out_shader_resource_view)->handle = descriptor_set_alloc(descriptor_set);
+    (*out_shader_resource_view)->buffer = buffer;
+    (*out_shader_resource_view)->device = device;
+
+    D3D12_SHADER_RESOURCE_VIEW_DESC srv_desc = {0};
+
+    if (opt_descriptor)
+    {
+        srv_desc.Format = to_d3d12_format[opt_descriptor->format];
+        D3D12_SRV_DIMENSION to_d3d12_srv_dimension[_BUFFER_TYPE_COUNT] = {
+            D3D12_SRV_DIMENSION_BUFFER,
+            D3D12_SRV_DIMENSION_TEXTURE2D
+        };
+        srv_desc.ViewDimension = to_d3d12_srv_dimension[opt_descriptor->buffer_type];
+
+        switch (opt_descriptor->buffer_type)
+        {
+        case BUFFER_TYPE_BUFFER:
+            srv_desc.Buffer.NumElements = (UINT)opt_descriptor->buffer_info.buffer.element_count;
+            srv_desc.Buffer.StructureByteStride = (UINT)opt_descriptor->buffer_info.buffer.element_stride_bytes;
+            break;
+        case BUFFER_TYPE_TEXTRUE2D:
+            srv_desc.Texture2D.MipLevels = (UINT)opt_descriptor->buffer_info.texture2d.mip_level_count;
+            break;
+        }
+    }
+    
+    ID3D12Device_CreateShaderResourceView(device->device, buffer->resource, opt_descriptor ? &srv_desc : 0, (*out_shader_resource_view)->handle.cpu_descriptor_handle);
+    // TODO: Add ref on buffer
+}
+void shader_resource_view_destroy(struct Shader_Resource_View* shader_resource_view)
+{
+    device_append_destroyed_objects(shader_resource_view->device, ACCESSED_OBJECT(shader_resource_view));
+    // TODO: Dec ref on buffer
+}
+struct Buffer* shader_resource_view_get_buffer(struct Shader_Resource_View* shader_resource_view)
+{
+    return shader_resource_view->buffer;
+}
+
+void device_create_constant_buffer_view(struct Device* device, struct Constant_Buffer_View_Descriptor* opt_descriptor, struct Descriptor_Set* descriptor_set, struct Buffer* buffer, struct Constant_Buffer_View** out_constant_buffer_view)
+{
+    (*out_constant_buffer_view) = alloc(sizeof(struct Constant_Buffer_View));
+    (*out_constant_buffer_view)->releasable_objects = 0;
+    (*out_constant_buffer_view)->ref_count = 1;
+    (*out_constant_buffer_view)->handle = descriptor_set_alloc(descriptor_set);
+    (*out_constant_buffer_view)->buffer = buffer;
+    (*out_constant_buffer_view)->device = device;
+
+    D3D12_CONSTANT_BUFFER_VIEW_DESC cbv_desc = {0};
+    if (opt_descriptor)
+    {
+        cbv_desc.BufferLocation = ID3D12Resource_GetGPUVirtualAddress(buffer->resource);
+        cbv_desc.SizeInBytes = (UINT)opt_descriptor->size_bytes;
+    }
+    
+    ID3D12Device_CreateConstantBufferView(device->device, opt_descriptor ? &cbv_desc : 0, (*out_constant_buffer_view)->handle.cpu_descriptor_handle);
+    // TODO: Add ref on buffer
+}
+void constant_buffer_view_destroy(struct Constant_Buffer_View* constant_buffer_view)
+{
+    device_append_destroyed_objects(constant_buffer_view->device, ACCESSED_OBJECT(constant_buffer_view));
+    // TODO: Dec ref on buffer
+}
+struct Buffer* constant_buffer_view_get_buffer(struct Constant_Buffer_View* constant_buffer_view)
+{
+    return constant_buffer_view->buffer;
+}
+
+void device_create_depth_stencil_view(struct Device* device, struct Depth_Stencil_View_Descriptor* opt_descriptor, struct Descriptor_Set* descriptor_set, struct Buffer* buffer, struct Depth_Stencil_View** out_depth_stencil_view)
+{
+    (*out_depth_stencil_view) = alloc(sizeof(struct Depth_Stencil_View));
+    (*out_depth_stencil_view)->releasable_objects = 0;
+    (*out_depth_stencil_view)->ref_count = 1;
+    (*out_depth_stencil_view)->handle = descriptor_set_alloc(descriptor_set);
+    (*out_depth_stencil_view)->buffer = buffer;
+    (*out_depth_stencil_view)->device = device;
+
+    D3D12_DEPTH_STENCIL_VIEW_DESC dsv_desc = {0};
+    if (opt_descriptor)
+    {
+        dsv_desc.Format = to_d3d12_format[opt_descriptor->format];
+    }
+    
+    ID3D12Device_CreateDepthStencilView(device->device, buffer->resource, opt_descriptor ? &dsv_desc : 0, (*out_depth_stencil_view)->handle.cpu_descriptor_handle);
+    // TODO: Add ref on buffer
+}
+void depth_stencil_view_destroy(struct Depth_Stencil_View* depth_stencil_view)
+{
+    device_append_destroyed_objects(depth_stencil_view->device, ACCESSED_OBJECT(depth_stencil_view));
+    // TODO: Dec ref on buffer
+}
+struct Buffer* depth_stencil_view_get_buffer(struct Depth_Stencil_View* depth_stencil_view)
+{
+    return depth_stencil_view->buffer;
+}
+
+void device_create_render_target_view(struct Device* device, struct Render_Target_View_Descriptor* opt_descriptor, struct Descriptor_Set* descriptor_set, struct Buffer* buffer, struct Render_Target_View** out_render_target_view)
+{
+    (*out_render_target_view) = alloc(sizeof(struct Depth_Stencil_View));
+    (*out_render_target_view)->releasable_objects = 0;
+    (*out_render_target_view)->ref_count = 1;
+    (*out_render_target_view)->handle = descriptor_set_alloc(descriptor_set);
+    (*out_render_target_view)->buffer = buffer;
+    (*out_render_target_view)->device = device;
+
+    D3D12_RENDER_TARGET_VIEW_DESC rtv_desc = {0};
+    if (opt_descriptor)
+    {
+        rtv_desc.Format = to_d3d12_format[opt_descriptor->format];
+    }
+    
+    ID3D12Device_CreateRenderTargetView(device->device, buffer->resource, opt_descriptor ? &rtv_desc : 0, (*out_render_target_view)->handle.cpu_descriptor_handle);
+    // TODO: Add ref on buffer
+}
+void render_target_view_destroy(struct Render_Target_View* render_target_view)
+{
+    device_append_destroyed_objects(render_target_view->device, ACCESSED_OBJECT(render_target_view));
+    // TODO: Dec ref on buffer
+}
+struct Buffer* render_target_view_get_buffer(struct Render_Target_View* render_target_view)
+{
+    return render_target_view->buffer;
 }
 
 void pipeline_state_object_destroy(struct Pipeline_State_Object* pipeline_state_object);

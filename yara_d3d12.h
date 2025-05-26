@@ -130,7 +130,6 @@ struct Buffer
     unsigned long long last_used_fence_value;
     unsigned long long ref_count;
 
-    struct Descriptor_Handle handles[D3D12_DESCRIPTOR_HEAP_TYPE_NUM_TYPES];
     enum RESOURCE_STATES last_known_state;
     struct Device* device;
     unsigned long long size;
@@ -143,6 +142,46 @@ struct Upload_Buffer
     unsigned long long last_used_fence_value;
     unsigned long long ref_count;
 
+    struct Device* device;
+};
+struct Shader_Resource_View
+{
+    unsigned long long releasable_objects;
+    unsigned long long last_used_fence_value;
+    unsigned long long ref_count;
+
+    struct Descriptor_Handle handle;
+    struct Buffer* buffer;
+    struct Device* device;
+};
+struct Constant_Buffer_View
+{
+    unsigned long long releasable_objects;
+    unsigned long long last_used_fence_value;
+    unsigned long long ref_count;
+
+    struct Descriptor_Handle handle;
+    struct Buffer* buffer;
+    struct Device* device;
+};
+struct Depth_Stencil_View
+{
+    unsigned long long releasable_objects;
+    unsigned long long last_used_fence_value;
+    unsigned long long ref_count;
+
+    struct Descriptor_Handle handle;
+    struct Buffer* buffer;
+    struct Device* device;
+};
+struct Render_Target_View
+{
+    unsigned long long releasable_objects;
+    unsigned long long last_used_fence_value;
+    unsigned long long ref_count;
+
+    struct Descriptor_Handle handle;
+    struct Buffer* buffer;
     struct Device* device;
 };
 struct Shader

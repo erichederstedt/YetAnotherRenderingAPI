@@ -300,6 +300,10 @@ struct Command_List;
 struct Descriptor_Set;
 struct Buffer;
 struct Upload_Buffer;
+struct Shader_Resource_View;
+struct Constant_Buffer_View;
+struct Depth_Stencil_View;
+struct Render_Target_View;
 struct Shader;
 struct Pipeline_State_Object;
 struct Fence;
@@ -316,8 +320,6 @@ struct Buffer_Descriptor
 {
     unsigned long long width;
     unsigned long long height;
-    struct Descriptor_Set* descriptor_sets[_DESCRIPTOR_TYPE_COUNT];
-    size_t descriptor_sets_count;
     enum BUFFER_TYPE buffer_type;
     enum BIND_TYPE bind_types[_BIND_TYPE_COUNT];
     size_t bind_types_count;
@@ -441,7 +443,7 @@ void command_queue_destroy(struct Command_Queue* command_queue);
 void command_queue_execute(struct Command_Queue* command_queue, struct Command_List* command_lists[], size_t command_lists_count);
 
 void swapchain_destroy(struct Swapchain* swapchain);
-int swapchain_create_backbuffers(struct Swapchain* swapchain, struct Device* device, struct Descriptor_Set* rtv_descriptor_set, struct Buffer** out_buffers);
+int swapchain_create_backbuffers(struct Swapchain* swapchain, struct Device* device, struct Descriptor_Set* rtv_descriptor_set, struct Render_Target_View** out_rtvs);
 int swapchain_get_current_backbuffer_index(struct Swapchain* swapchain);
 int swapchain_present(struct Swapchain* swapchain);
 struct Swapchain_Descriptor swapchain_get_descriptor(struct Swapchain* swapchain);
@@ -452,13 +454,13 @@ void command_list_set_pipeline_state_object(struct Command_List* command_list, s
 void command_list_set_shader(struct Command_List* command_list, struct Shader* shader);
 void command_list_set_viewport(struct Command_List* command_list, struct Viewport viewport);
 void command_list_set_scissor_rect(struct Command_List* command_list, struct Rect scissor_rect);
-void command_list_set_render_targets(struct Command_List* command_list, struct Buffer* render_targets[], int render_targets_count, struct Buffer* opt_depth_buffer/* = 0*/);
-void command_list_clear_render_target(struct Command_List* command_list, struct Buffer* render_target, float clear_color[4]);
-void command_list_clear_depth_target(struct Command_List* command_list, struct Buffer* depth_buffer, float depth, int should_clear_stencil, unsigned char stencil);
+void command_list_set_render_targets(struct Command_List* command_list, struct Render_Target_View* render_targets[], int render_targets_count, struct Depth_Stencil_View* opt_depth_stencil_view/* = 0*/);
+void command_list_clear_render_target(struct Command_List* command_list, struct Render_Target_View* render_target, float clear_color[4]);
+void command_list_clear_depth_target(struct Command_List* command_list, struct Depth_Stencil_View* depth_stencil_view, float depth, int should_clear_stencil, unsigned char stencil);
 void command_list_set_vertex_buffer(struct Command_List* command_list, struct Buffer* vertex_buffer, size_t size, size_t stride);
 void command_list_set_index_buffer(struct Command_List* command_list, struct Buffer* index_buffer, size_t size, enum FORMAT format);
-void command_list_set_constant_buffer(struct Command_List* command_list, struct Buffer* constant_buffer, unsigned int root_parameter_index);
-void command_list_set_texture_buffer(struct Command_List* command_list, struct Buffer* texture_buffer, unsigned int root_parameter_index);
+void command_list_set_constant_buffer(struct Command_List* command_list, struct Constant_Buffer_View* constant_buffer_view, unsigned int root_parameter_index);
+void command_list_set_texture_buffer(struct Command_List* command_list, struct Shader_Resource_View* shader_resource_view, unsigned int root_parameter_index);
 void command_list_set_primitive_topology(struct Command_List* command_list, enum PRIMITIVE_TOPOLOGY primitive_topology);
 void command_list_draw_instanced(struct Command_List* command_list, size_t vertex_count_per_instance, size_t instance_count, size_t start_vertex_location, size_t start_instance_location);
 void command_list_draw_indexed_instanced(struct Command_List* command_list, size_t index_count_per_instance, size_t instance_count, size_t start_index_location, size_t start_instance_location, size_t base_vertex_location);
@@ -470,10 +472,60 @@ void descriptor_set_destroy(struct Descriptor_Set* descriptor_set);
 
 void buffer_destroy(struct Buffer* buffer);
 struct Buffer_Descriptor buffer_get_descriptor(struct Buffer* buffer);
+void buffer_set_name(struct Buffer* buffer, const char* name);
 
 void upload_buffer_destroy(struct Upload_Buffer* upload_buffer);
 void* upload_buffer_map(struct Upload_Buffer* upload_buffer);
 void upload_buffer_unmap(struct Upload_Buffer* upload_buffer);
+
+struct Shader_Resource_View_Descriptor
+{
+    enum FORMAT format;
+    enum BUFFER_TYPE buffer_type;
+    union
+    {
+        struct 
+        {
+            size_t element_count;
+            size_t element_stride_bytes;
+        } buffer;
+        struct 
+        {
+            size_t mip_level_count;
+        } texture2d;
+    } buffer_info;
+};
+struct Shader_Resource_View;
+void device_create_shader_resource_view(struct Device* device, struct Shader_Resource_View_Descriptor* opt_descriptor, struct Descriptor_Set* descriptor_set, struct Buffer* buffer, struct Shader_Resource_View** out_shader_resource_view);
+void shader_resource_view_destroy(struct Shader_Resource_View* shader_resource_view);
+struct Buffer* shader_resource_view_get_buffer(struct Shader_Resource_View* shader_resource_view);
+
+struct Constant_Buffer_View_Descriptor
+{
+    size_t size_bytes;
+};
+struct Constant_Buffer_View;
+void device_create_constant_buffer_view(struct Device* device, struct Constant_Buffer_View_Descriptor* opt_descriptor, struct Descriptor_Set* descriptor_set, struct Buffer* buffer, struct Constant_Buffer_View** out_constant_buffer_view);
+void constant_buffer_view_destroy(struct Constant_Buffer_View* constant_buffer_view);
+struct Buffer* constant_buffer_view_get_buffer(struct Constant_Buffer_View* constant_buffer_view);
+
+struct Depth_Stencil_View_Descriptor
+{
+    enum FORMAT format;
+};
+struct Depth_Stencil_View;
+void device_create_depth_stencil_view(struct Device* device, struct Depth_Stencil_View_Descriptor* opt_descriptor, struct Descriptor_Set* descriptor_set, struct Buffer* buffer, struct Depth_Stencil_View** out_depth_stencil_view);
+void depth_stencil_view_destroy(struct Depth_Stencil_View* depth_stencil_view);
+struct Buffer* depth_stencil_view_get_buffer(struct Depth_Stencil_View* depth_stencil_view);
+
+struct Render_Target_View_Descriptor
+{
+    enum FORMAT format;
+};
+struct Render_Target_View;
+void device_create_render_target_view(struct Device* device, struct Render_Target_View_Descriptor* opt_descriptor, struct Descriptor_Set* descriptor_set, struct Buffer* buffer, struct Render_Target_View** out_render_target_view);
+void render_target_view_destroy(struct Render_Target_View* render_target_view);
+struct Buffer* render_target_view_get_buffer(struct Render_Target_View* render_target_view);
 
 void pipeline_state_object_destroy(struct Pipeline_State_Object* pipeline_state_object);
 
