@@ -63,10 +63,12 @@ int device_create(struct Device** out_device)
 {
     *out_device = alloc(sizeof(struct Device));
 
+    #if 1
     ID3D12Debug* debug;
     D3D12GetDebugInterface(&IID_ID3D12Debug, &debug);
     ID3D12Debug_EnableDebugLayer(debug);
-    
+    #endif
+
     D3D12CreateDevice(0, D3D_FEATURE_LEVEL_12_0, &IID_ID3D12Device, &(*out_device)->device);
     CreateDXGIFactory2(0, &IID_IDXGIFactory2, &(*out_device)->factory);
 
@@ -772,6 +774,16 @@ void command_list_set_texture_buffer(struct Command_List* command_list, struct S
     ID3D12GraphicsCommandList_SetGraphicsRootDescriptorTable(command_list->command_list_allocation->command_list, root_parameter_index, shader_resource_view->handle.gpu_descriptor_handle);
     command_list_append_accessed_object(command_list, ACCESSED_OBJECT(shader_resource_view->buffer));
 }
+void command_list_set_descriptor_set(struct Command_List* command_list, struct Descriptor_Set** descriptor_set_array, size_t descriptor_set_count)
+{
+    ID3D12DescriptorHeap** descriptor_heaps = _alloca(sizeof(ID3D12DescriptorHeap*) * descriptor_set_count);
+    for (size_t i = 0; i < descriptor_set_count; i++)
+    {
+        descriptor_heaps[i] = descriptor_set_array[i]->descriptor_heap;
+    }
+    
+    ID3D12GraphicsCommandList_SetDescriptorHeaps(command_list->command_list_allocation->command_list, (UINT)descriptor_set_count, descriptor_heaps);
+}
 void command_list_set_primitive_topology(struct Command_List* command_list, enum PRIMITIVE_TOPOLOGY primitive_topology)
 {
     ID3D12GraphicsCommandList_IASetPrimitiveTopology(command_list->command_list_allocation->command_list, to_d3d12_primitive_topology[primitive_topology]);
@@ -923,6 +935,12 @@ struct Buffer_Descriptor buffer_get_descriptor(struct Buffer* buffer)
         .width = (long long)resource_description.Width,
         .height = (long long)resource_description.Height
     };
+}
+void buffer_set_name(struct Buffer* buffer, const char* name)
+{
+    wchar_t* w_name = calloc(strlen(name)+1, sizeof(wchar_t));
+    mbstowcs(w_name, name, strlen(name));
+    ID3D12Resource_SetName(buffer->resource, w_name);
 }
 
 void upload_buffer_destroy(struct Upload_Buffer* upload_buffer)

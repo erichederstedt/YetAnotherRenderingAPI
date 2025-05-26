@@ -461,6 +461,7 @@ void command_list_set_vertex_buffer(struct Command_List* command_list, struct Bu
 void command_list_set_index_buffer(struct Command_List* command_list, struct Buffer* index_buffer, size_t size, enum FORMAT format);
 void command_list_set_constant_buffer(struct Command_List* command_list, struct Constant_Buffer_View* constant_buffer_view, unsigned int root_parameter_index);
 void command_list_set_texture_buffer(struct Command_List* command_list, struct Shader_Resource_View* shader_resource_view, unsigned int root_parameter_index);
+void command_list_set_descriptor_set(struct Command_List* command_list, struct Descriptor_Set** descriptor_set_array, size_t descriptor_set_count);
 void command_list_set_primitive_topology(struct Command_List* command_list, enum PRIMITIVE_TOPOLOGY primitive_topology);
 void command_list_draw_instanced(struct Command_List* command_list, size_t vertex_count_per_instance, size_t instance_count, size_t start_vertex_location, size_t start_instance_location);
 void command_list_draw_indexed_instanced(struct Command_List* command_list, size_t index_count_per_instance, size_t instance_count, size_t start_index_location, size_t start_instance_location, size_t base_vertex_location);
