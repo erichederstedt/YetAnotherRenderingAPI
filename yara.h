@@ -157,6 +157,125 @@ enum FORMAT
 
     _FORMAT_COUNT
 };
+static size_t format_bit_size(enum FORMAT format)
+{
+    switch (format)
+    {
+    case FORMAT_R32G32B32A32_TYPELESS:
+    case FORMAT_R32G32B32A32_FLOAT:
+    case FORMAT_R32G32B32A32_SINT:
+    case FORMAT_R32G32B32A32_UINT:
+        return 128;
+
+    case FORMAT_R32G32B32_TYPELESS:
+    case FORMAT_R32G32B32_FLOAT:
+    case FORMAT_R32G32B32_UINT:
+    case FORMAT_R32G32B32_SINT:
+        return 96;
+
+    case FORMAT_R32G32_TYPELESS:
+    case FORMAT_R32G32_FLOAT:
+    case FORMAT_R32G32_UINT:
+    case FORMAT_R32G32_SINT:
+    case FORMAT_R16G16B16A16_TYPELESS:
+    case FORMAT_R16G16B16A16_FLOAT:
+    case FORMAT_R16G16B16A16_UNORM:
+    case FORMAT_R16G16B16A16_UINT:
+    case FORMAT_R16G16B16A16_SNORM:
+    case FORMAT_R16G16B16A16_SINT:
+        return 64;
+
+    case FORMAT_R32_TYPELESS:
+    case FORMAT_D32_FLOAT:
+    case FORMAT_R32_FLOAT:
+    case FORMAT_R32_UINT:
+    case FORMAT_R32_SINT:
+    case FORMAT_R16G16_TYPELESS:
+    case FORMAT_R16G16_FLOAT:
+    case FORMAT_R16G16_UNORM:
+    case FORMAT_R16G16_UINT:
+    case FORMAT_R16G16_SNORM:
+    case FORMAT_R16G16_SINT:
+    case FORMAT_R8G8B8A8_TYPELESS:
+    case FORMAT_R8G8B8A8_UNORM:
+    case FORMAT_R8G8B8A8_UNORM_SRGB:
+    case FORMAT_R8G8B8A8_UINT:
+    case FORMAT_R8G8B8A8_SNORM:
+    case FORMAT_R8G8B8A8_SINT:
+    case FORMAT_R10G10B10A2_TYPELESS:
+    case FORMAT_R10G10B10A2_UNORM:
+    case FORMAT_R10G10B10A2_UINT:
+    case FORMAT_R11G11B10_FLOAT:
+    case FORMAT_R24G8_TYPELESS:
+    case FORMAT_D24_UNORM_S8_UINT:
+    case FORMAT_R9G9B9E5_SHAREDEXP:
+    case FORMAT_R8G8_B8G8_UNORM:
+    case FORMAT_G8R8_G8B8_UNORM:
+    case FORMAT_B8G8R8A8_UNORM:
+    case FORMAT_B8G8R8X8_UNORM:
+    case FORMAT_B8G8R8A8_TYPELESS:
+    case FORMAT_B8G8R8A8_UNORM_SRGB:
+    case FORMAT_B8G8R8X8_TYPELESS:
+    case FORMAT_B8G8R8X8_UNORM_SRGB:
+        return 32;
+
+    case FORMAT_R16_TYPELESS:
+    case FORMAT_R16_FLOAT:
+    case FORMAT_D16_UNORM:
+    case FORMAT_R16_UNORM:
+    case FORMAT_R16_UINT:
+    case FORMAT_R16_SNORM:
+    case FORMAT_R16_SINT:
+    case FORMAT_R8G8_TYPELESS:
+    case FORMAT_R8G8_UNORM:
+    case FORMAT_R8G8_UINT:
+    case FORMAT_R8G8_SNORM:
+    case FORMAT_R8G8_SINT:
+    case FORMAT_B5G6R5_UNORM:
+    case FORMAT_B5G5R5A1_UNORM:
+    case FORMAT_B4G4R4A4_UNORM:
+        return 16;
+
+    case FORMAT_R8_TYPELESS:
+    case FORMAT_R8_UNORM:
+    case FORMAT_R8_UINT:
+    case FORMAT_R8_SNORM:
+    case FORMAT_R8_SINT:
+    case FORMAT_A8_UNORM:
+        return 8;
+
+    // Block-compressed formats:
+    case FORMAT_BC1_TYPELESS:
+    case FORMAT_BC1_UNORM:
+    case FORMAT_BC1_UNORM_SRGB:
+    case FORMAT_BC4_TYPELESS:
+    case FORMAT_BC4_UNORM:
+    case FORMAT_BC4_SNORM:
+        return 4; // Averaged out of a 8 byte 4x4 pixel block
+
+    case FORMAT_BC2_TYPELESS:
+    case FORMAT_BC2_UNORM:
+    case FORMAT_BC2_UNORM_SRGB:
+    case FORMAT_BC3_TYPELESS:
+    case FORMAT_BC3_UNORM:
+    case FORMAT_BC3_UNORM_SRGB:
+    case FORMAT_BC5_TYPELESS:
+    case FORMAT_BC5_UNORM:
+    case FORMAT_BC5_SNORM:
+    case FORMAT_BC6H_TYPELESS:
+    case FORMAT_BC6H_UF16:
+    case FORMAT_BC6H_SF16:
+    case FORMAT_BC7_TYPELESS:
+    case FORMAT_BC7_UNORM:
+    case FORMAT_BC7_UNORM_SRGB:
+        return 8; // Averaged out of a 16 byte 4x4 pixel block
+
+    case FORMAT_R1_UNORM:
+        return 1;
+    }
+
+    return 0; // Unsupported format
+}
 enum INPUT_ELEMENT_CLASSIFICATION
 {
     INPUT_ELEMENT_CLASSIFICATION_PER_VERTEX,
