@@ -246,6 +246,8 @@ int device_create_buffer(struct Device* device, struct Buffer_Descriptor buffer_
     (*out_buffer)->releasable_objects = 1;
     (*out_buffer)->ref_count = 1;
     (*out_buffer)->size = buffer_description.width * buffer_description.height;
+    if (buffer_description.format != FORMAT_UNKNOWN)
+        (*out_buffer)->size = ((*out_buffer)->size * format_bit_size(buffer_description.format)) / 8;
     (*out_buffer)->buffer_type = buffer_description.buffer_type;
 
     D3D12_HEAP_PROPERTIES defaultHeapProperties = {
@@ -255,11 +257,11 @@ int device_create_buffer(struct Device* device, struct Buffer_Descriptor buffer_
         .Alignment = 0,
         .Width = (UINT64)buffer_description.width,
         .Height = (UINT)buffer_description.height,
-        .DepthOrArraySize = 1,
-        .MipLevels = 1,
+        .DepthOrArraySize = (UINT16)max(buffer_description.array_count, 1),
+        .MipLevels = (UINT16)max(buffer_description.mip_count, 1),
         .Format = to_d3d12_format[buffer_description.format],
         .SampleDesc.Count = 1,
-        .Layout = (buffer_description.buffer_type != BUFFER_TYPE_BUFFER) ? 0 : D3D12_TEXTURE_LAYOUT_ROW_MAJOR,
+        .Layout = (buffer_description.buffer_type != BUFFER_TYPE_BUFFER) ? D3D12_TEXTURE_LAYOUT_UNKNOWN : D3D12_TEXTURE_LAYOUT_ROW_MAJOR,
         .Flags = D3D12_RESOURCE_FLAG_NONE,
         .Dimension = to_d3d12_resource_dimension[buffer_description.buffer_type]
     };

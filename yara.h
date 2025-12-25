@@ -157,6 +157,10 @@ enum FORMAT
 
     _FORMAT_COUNT
 };
+static int format_is_block_compressed(enum FORMAT format)
+{
+    return (format >= FORMAT_BC1_TYPELESS && format <= FORMAT_BC7_UNORM_SRGB);
+}
 static size_t format_bit_size(enum FORMAT format)
 {
     switch (format)
@@ -275,6 +279,23 @@ static size_t format_bit_size(enum FORMAT format)
     }
 
     return 0; // Unsupported format
+}
+static size_t format_compute_mip_size(enum FORMAT format, int width, int height)
+{
+    if (format_is_block_compressed(format))
+    {
+        size_t block_size = (format_bit_size(format) == 4) ? 8 : 16;
+        size_t blocks_wide = (width + 3) / 4;
+        size_t blocks_high = (height + 3) / 4;
+        return (size_t)(blocks_wide * blocks_high * block_size);
+    }
+    else
+    {
+        size_t bits_per_pixel = format_bit_size(format);
+        if (bits_per_pixel == 0) return 0;
+        size_t row_bytes = (width * bits_per_pixel + 7) / 8;
+        return row_bytes * height;
+    }
 }
 enum INPUT_ELEMENT_CLASSIFICATION
 {
@@ -443,6 +464,8 @@ struct Buffer_Descriptor
     enum BIND_TYPE bind_types[_BIND_TYPE_COUNT];
     size_t bind_types_count;
     enum FORMAT format;
+    unsigned int mip_count;
+    unsigned int array_count;
 };
 struct Input_Element_Descriptor
 {
