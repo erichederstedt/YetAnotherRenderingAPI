@@ -64,9 +64,11 @@ int device_create(struct Device** out_device)
     *out_device = alloc(sizeof(struct Device));
 
     #if 1
-    ID3D12Debug* debug;
-    D3D12GetDebugInterface(&IID_ID3D12Debug, &debug);
-    ID3D12Debug_EnableDebugLayer(debug);
+    ID3D12Debug1* debug;
+    D3D12GetDebugInterface(&IID_ID3D12Debug1, &debug);
+    ID3D12Debug1_EnableDebugLayer(debug);
+    ID3D12Debug1_SetEnableGPUBasedValidation(debug, TRUE);
+    ID3D12Debug1_Release(debug);
     #endif
 
     D3D12CreateDevice(0, D3D_FEATURE_LEVEL_12_0, &IID_ID3D12Device, &(*out_device)->device);
