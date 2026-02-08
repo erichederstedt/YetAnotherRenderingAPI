@@ -870,6 +870,17 @@ void command_list_set_buffer_state(struct Command_List* command_list, struct Buf
     command_list->buffer_states[buffer_state_index].state = to_state;
     command_list_append_accessed_object(command_list, ACCESSED_OBJECT(buffer));
 }
+void* command_list_map_buffer(struct Command_List* command_list, struct Buffer* buffer)
+{
+    device_create_upload_buffer(command_list->device, 0, buffer->size, &buffer->mapped_buffer);
+    return upload_buffer_map(buffer->mapped_buffer);
+}
+void command_list_unmap_buffer(struct Command_List* command_list, struct Buffer* buffer)
+{
+    upload_buffer_unmap(buffer->mapped_buffer);
+    command_list_copy_upload_buffer_to_buffer(command_list, buffer->mapped_buffer, buffer);
+    upload_buffer_destroy(buffer->mapped_buffer);
+}
 int command_list_close(struct Command_List* command_list)
 {
     ID3D12GraphicsCommandList_Close(command_list->command_list_allocation->command_list);

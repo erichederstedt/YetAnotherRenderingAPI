@@ -609,6 +609,8 @@ void command_list_draw_instanced(struct Command_List* command_list, size_t verte
 void command_list_draw_indexed_instanced(struct Command_List* command_list, size_t index_count_per_instance, size_t instance_count, size_t start_index_location, size_t start_instance_location, size_t base_vertex_location);
 void command_list_copy_upload_buffer_to_buffer(struct Command_List* command_list, struct Upload_Buffer* src, struct Buffer* dst);
 void command_list_set_buffer_state(struct Command_List* command_list, struct Buffer* buffer, enum RESOURCE_STATE to_state);
+void* command_list_map_buffer(struct Command_List* command_list, struct Buffer* buffer);
+void command_list_unmap_buffer(struct Command_List* command_list, struct Buffer* buffer);
 int command_list_close(struct Command_List* command_list);
 
 void descriptor_set_destroy(struct Descriptor_Set* descriptor_set);

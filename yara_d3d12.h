@@ -134,6 +134,7 @@ struct Buffer
     struct Device* device;
     unsigned long long size;
     enum BUFFER_TYPE buffer_type;
+    struct Upload_Buffer* mapped_buffer;
 };
 struct Upload_Buffer
 {
