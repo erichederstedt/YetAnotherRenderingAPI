@@ -63,7 +63,7 @@ int device_create(struct Device** out_device)
 {
     *out_device = alloc(sizeof(struct Device));
 
-    #if 1
+    #if 0
     ID3D12Debug1* debug;
     D3D12GetDebugInterface(&IID_ID3D12Debug1, &debug);
     ID3D12Debug1_EnableDebugLayer(debug);
