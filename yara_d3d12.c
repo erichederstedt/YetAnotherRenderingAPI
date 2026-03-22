@@ -183,7 +183,7 @@ int device_create_swapchain(struct Device* device, struct Command_Queue* command
         .Scaling = DXGI_SCALING_STRETCH,
         .SwapEffect = DXGI_SWAP_EFFECT_FLIP_DISCARD,
         .AlphaMode = DXGI_ALPHA_MODE_IGNORE,
-        .Flags = 0
+        .Flags = DXGI_SWAP_CHAIN_FLAG_ALLOW_TEARING
     };
     IDXGISwapChain1 *swapchain1 = 0;
     IDXGIFactory2_CreateSwapChainForHwnd(device->factory, (IUnknown*)command_queue->command_queue, (HWND)swapchain_descriptor.window, &d3d12_swapchain_description, 0, 0, &swapchain1);
@@ -646,7 +646,7 @@ int swapchain_get_current_backbuffer_index(struct Swapchain* swapchain)
 }
 int swapchain_present(struct Swapchain* swapchain)
 {
-    IDXGISwapChain3_Present(swapchain->swapchain, 0, 0); // DXGI_PRESENT_ALLOW_TEARING
+    IDXGISwapChain3_Present(swapchain->swapchain, 0, DXGI_PRESENT_ALLOW_TEARING); // DXGI_PRESENT_ALLOW_TEARING
 
     device_release_destroyed_objects(swapchain->command_queue->device);
 
