@@ -81,6 +81,8 @@ int device_create(struct Device** out_device)
     
     device_create_fence(*out_device, &(*out_device)->main_fence);
 
+    (*out_device)->delayed_free_queue = delayed_queue_create();
+
     return 0;
 }
 
@@ -872,14 +874,17 @@ void command_list_set_buffer_state(struct Command_List* command_list, struct Buf
 }
 void* command_list_map_buffer(struct Command_List* command_list, struct Buffer* buffer)
 {
-    device_create_upload_buffer(command_list->device, 0, buffer->size, &buffer->mapped_buffer);
-    return upload_buffer_map(buffer->mapped_buffer);
+    buffer->mapped_buffer = mega_alloc(command_list->device, buffer->size);
+    return upload_buffer_map(buffer->mapped_buffer.upload_buffer);
 }
 void command_list_unmap_buffer(struct Command_List* command_list, struct Buffer* buffer)
 {
-    upload_buffer_unmap(buffer->mapped_buffer);
-    command_list_copy_upload_buffer_to_buffer(command_list, buffer->mapped_buffer, buffer);
-    upload_buffer_destroy(buffer->mapped_buffer);
+    upload_buffer_unmap(buffer->mapped_buffer.upload_buffer);
+    command_list_copy_upload_buffer_to_buffer(command_list, buffer->mapped_buffer.upload_buffer, buffer);
+
+    command_list->device->delayed_free_queue;
+    delayed_queue_push_back(&command_list->device->delayed_free_queue, &buffer->mapped_buffer);
+    device_delayed_free_queue_update(command_list->device);
 }
 int command_list_close(struct Command_List* command_list)
 {
@@ -1197,3 +1202,171 @@ struct Command_List_Allocation* command_list_allocator_alloc(struct Command_List
         }
     }
 }
+
+struct Mapped_Buffer_Pool_Allocator device_create_mapped_buffer_pool_allocator(struct Device* device, size_t element_size) 
+{
+    return (struct Mapped_Buffer_Pool_Allocator){
+        .has_init = 1,
+        .device = device,
+        .element_size = element_size,
+
+        .pool = alloc(sizeof(struct Upload_Buffer*) * 2),
+        .pool_count = 0,
+        .pool_size = 2,
+        .free_list = alloc(sizeof(size_t) * 2),
+        .free_list_count = 0
+    };
+}
+struct Mapped_Buffer mapped_buffer_alloc(struct Mapped_Buffer_Pool_Allocator* pool)
+{
+    size_t index = 0;
+    if (pool->free_list_count)
+    {
+        // Handle allocating from free list
+        index = --pool->free_list_count;
+    }
+    else
+    {
+        if (pool->pool_count == pool->pool_size) 
+        {
+            // Handle resizing pool and free_list
+            struct Upload_Buffer** old_pool = pool->pool;
+            size_t* old_free_list = pool->free_list;
+            size_t old_pool_size = pool->pool_size;
+
+            pool->pool_size *= 2;
+            pool->pool = alloc(sizeof(struct Upload_Buffer*) * pool->pool_size);
+            pool->free_list = alloc(sizeof(size_t) * pool->pool_size);
+            
+            memcpy(pool->pool, old_pool, sizeof(struct Upload_Buffer*) * old_pool_size);
+            memcpy(pool->free_list, old_free_list, sizeof(size_t) * old_pool_size);
+        }
+        // Handle allocating new upload buffer
+        index = pool->pool_count++;
+        device_create_upload_buffer(pool->device, 0, pool->element_size, &pool->pool[index]);
+    }
+    return (struct Mapped_Buffer){ pool->pool[index], index };
+}
+void mapped_buffer_free(struct Mapped_Buffer_Pool_Allocator* pool, struct Mapped_Buffer* mapped_buffer)
+{
+    pool->free_list[pool->free_list_count++] = mapped_buffer->index;
+}
+
+// TODO: look into https://github.com/rofrol/codeforces/blob/master/ceil_log2.c
+unsigned int ceil_log2(unsigned int x) // non-libc implementation of: ceil(log2(x))
+{
+    int n = 0;
+    unsigned int v = x - 1;
+
+    while (v > 0)
+    {
+        v >>= 1;
+        n++;
+    }
+
+    return n;
+}
+unsigned int fast_pow2(unsigned int exp)
+{
+    const static unsigned int cache[] = { 1, 2, 4, 8, 16, 32, 64, 128, 256, 512, 1024, 2048, 4096, 8192, 16384, 32768, 65536, 131072, 262144, 524288, 1048576, 2097152, 4194304, 8388608, 16777216, 33554432, 67108864 };
+    return cache[exp];
+}
+struct Mapped_Buffer mega_alloc(struct Device* device, size_t size)
+{
+    unsigned int index = ceil_log2((unsigned int)size);
+    if (index > MAX_MAPPED_BUFFER_POOLS) // size > MB(64) is not allowed!
+        return (struct Mapped_Buffer){0};
+
+    if (!device->mapped_buffer_pools[index].has_init)
+    {
+        device->mapped_buffer_pools[index] = device_create_mapped_buffer_pool_allocator(device, fast_pow2(index));
+    }
+    struct Mapped_Buffer_Pool_Allocator* pool_allocator = &device->mapped_buffer_pools[index];
+    struct Mapped_Buffer mapped_buffer = mapped_buffer_alloc(pool_allocator);
+    mapped_buffer.pool_index = index;
+    return mapped_buffer;
+}
+void mega_free(struct Device* device, struct Mapped_Buffer* mapped_buffer)
+{
+    size_t index = mapped_buffer->pool_index;
+    if (index > MAX_MAPPED_BUFFER_POOLS)
+        return;
+
+    struct Mapped_Buffer_Pool_Allocator* pool_allocator = &device->mapped_buffer_pools[index];
+    mapped_buffer_free(pool_allocator, mapped_buffer);
+}
+
+void device_delayed_free_queue_update(struct Device* device)
+{
+    struct Delayed_Queue* queue = &device->delayed_free_queue;
+    while (queue->length != 0)
+    {
+        struct Mapped_Buffer mapped_buffer = delayed_queue_get(queue, 0);
+        if (fence_get_completed_value(device->main_fence) >= mapped_buffer.upload_buffer->last_used_fence_value)
+        {
+            delayed_queue_pop_front(queue);
+            mega_free(device, &mapped_buffer);
+        }
+        else
+        {
+            break;
+        }
+    }
+}
+
+struct Delayed_Queue delayed_queue_create()
+{
+    const unsigned int default_size = 128;
+    return (struct Delayed_Queue){
+        alloc(sizeof(struct Mapped_Buffer) * default_size),
+        default_size,
+        0,
+        0,
+        0
+    };
+}
+struct Mapped_Buffer delayed_queue_get(struct Delayed_Queue* queue, unsigned int index)
+{
+    unsigned int real_index = (queue->start + index) % queue->size;
+    return queue->buffer[real_index];
+}
+void delayed_queue_push_back(struct Delayed_Queue* queue, struct Mapped_Buffer* mapped_buffer)
+{
+    unsigned int index = queue->end++;
+    queue->buffer[index] = *mapped_buffer;
+    queue->length++;
+
+    if (queue->end == queue->size)
+    {
+        queue->end = 0;
+    }
+    if (queue->end == queue->start)
+    {
+        unsigned int new_size = queue->size * 2;
+        struct Mapped_Buffer* new_buffer = alloc(sizeof(struct Mapped_Buffer) * new_size);
+        for (unsigned int i = 0; i < queue->length; i++)
+        {
+            new_buffer[i] = delayed_queue_get(queue, i);
+        }
+        queue->start = 0;
+        queue->end = queue->length;
+        free(queue->buffer);
+        queue->buffer = new_buffer;
+        queue->size = new_size;
+    }
+}
+// TODO: delayed_queue_push_front
+struct Mapped_Buffer delayed_queue_pop_front(struct Delayed_Queue* queue)
+{
+    unsigned int index = queue->start++;
+    queue->length--;
+
+    if (queue->start == queue->size)
+    {
+        queue->start = 0;
+    }
+    // Could implement shrinking behavior when queue->start == queue->end
+
+    return queue->buffer[index];
+}
+// TODO: delayed_queue_push_back

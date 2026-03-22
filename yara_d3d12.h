@@ -34,6 +34,7 @@ void mutex_destroy(Mutex* mutex);
 #define ID3DBlob_Release(self) ((self)->lpVtbl->Release(self))
 #define ID3DBlob_GetBufferPointer(self) ((self)->lpVtbl->GetBufferPointer(self))
 #define ID3DBlob_GetBufferSize(self) ((self)->lpVtbl->GetBufferSize(self))
+#define MAX_MAPPED_BUFFER_POOLS 26
 
 struct Accessed_Object
 {
@@ -61,6 +62,29 @@ struct Command_List_Allocator
 
     struct Device* device;
 };
+struct Mapped_Buffer {
+    struct Upload_Buffer* upload_buffer;
+    size_t index;
+    size_t pool_index;
+};
+struct Mapped_Buffer_Pool_Allocator {
+    int has_init;
+    struct Device* device;
+    size_t element_size;
+
+    struct Upload_Buffer** pool;
+    size_t pool_count;
+    size_t pool_size;
+    size_t* free_list;
+    size_t free_list_count;
+};
+struct Delayed_Queue {
+    struct Mapped_Buffer* buffer;
+    unsigned int size;
+    unsigned int length;
+    unsigned int start;
+    unsigned int end;
+};
 struct Device
 {
     ID3D12Device* device;
@@ -71,6 +95,9 @@ struct Device
     struct Accessed_Object* destroyed_objects;
     size_t destroyed_objects_size;
     size_t destroyed_objects_count;
+
+    struct Mapped_Buffer_Pool_Allocator mapped_buffer_pools[MAX_MAPPED_BUFFER_POOLS]; // 26 will max out at 64MB pools.
+    struct Delayed_Queue delayed_free_queue;
 };
 struct Command_Queue
 {
@@ -134,7 +161,7 @@ struct Buffer
     struct Device* device;
     unsigned long long size;
     enum BUFFER_TYPE buffer_type;
-    struct Upload_Buffer* mapped_buffer;
+    struct Mapped_Buffer mapped_buffer;
 };
 struct Upload_Buffer
 {
@@ -582,5 +609,19 @@ void command_list_append_accessed_object(struct Command_List* command_list, stru
 struct Command_List_Allocator command_list_allocator_create(struct Device* device);
 void command_list_allocator_increment_index(struct Command_List_Allocator* command_list_allocator);
 struct Command_List_Allocation* command_list_allocator_alloc(struct Command_List_Allocator* command_list_allocator);
+
+struct Mapped_Buffer_Pool_Allocator device_create_mapped_buffer_pool_allocator(struct Device* device, size_t element_size);
+struct Mapped_Buffer mapped_buffer_alloc(struct Mapped_Buffer_Pool_Allocator* pool);
+void mapped_buffer_free(struct Mapped_Buffer_Pool_Allocator* pool, struct Mapped_Buffer* mapped_buffer);
+
+struct Mapped_Buffer mega_alloc(struct Device* device, size_t size);
+void mega_free(struct Device* device, struct Mapped_Buffer* mapped_buffer);
+
+void device_delayed_free_queue_update(struct Device* device);
+
+struct Delayed_Queue delayed_queue_create();
+struct Mapped_Buffer delayed_queue_get(struct Delayed_Queue* queue, unsigned int index);
+void delayed_queue_push_back(struct Delayed_Queue* queue, struct Mapped_Buffer* mapped_buffer);
+struct Mapped_Buffer delayed_queue_pop_front(struct Delayed_Queue* queue);
 
 #endif
