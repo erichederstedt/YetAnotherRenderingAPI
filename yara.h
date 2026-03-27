@@ -280,7 +280,11 @@ static size_t format_bit_size(enum FORMAT format)
 
     return 0; // Unsupported format
 }
-static size_t format_compute_mip_size(enum FORMAT format, int width, int height)
+#ifndef MAX
+#define YARA_MAX
+#define MAX(a,b) (((a)>(b))?(a):(b))
+#endif
+static inline size_t format_compute_mip_size(enum FORMAT format, int width, int height)
 {
     if (format_is_block_compressed(format))
     {
@@ -294,6 +298,24 @@ static size_t format_compute_mip_size(enum FORMAT format, int width, int height)
         return row_bytes * height;
     }
 }
+static inline size_t format_compute_pitch_size(enum FORMAT format, int width)
+{
+    if (format_is_block_compressed(format))
+    {
+        return MAX( 1, ((width+3)/4) ) * ((format_bit_size(format) == 4) ? 8 : 16);
+    }
+    else
+    {
+        size_t bits_per_pixel = format_bit_size(format);
+        if (bits_per_pixel == 0) return 0;
+        size_t row_bytes = (width * bits_per_pixel + 7) / 8;
+        return row_bytes;
+    }
+}
+#ifdef YARA_MAX
+#undef MAX
+#undef YARA_MAX
+#endif
 enum INPUT_ELEMENT_CLASSIFICATION
 {
     INPUT_ELEMENT_CLASSIFICATION_PER_VERTEX,
@@ -577,6 +599,12 @@ int device_create_upload_buffer(struct Device* device, void* opt_data, unsigned 
 int device_create_shader(struct Device* device, struct Shader** out_shader);
 int device_create_pipeline_state_object(struct Device* device, struct Pipeline_State_Object_Descriptor descriptor, struct Pipeline_State_Object** out_pipeline_state_object);
 int device_create_fence(struct Device* device, struct Fence** out_fence);
+struct Allocation_Info 
+{
+    unsigned long long size;
+    unsigned long long alignment;
+};
+struct Allocation_Info device_get_allocation_info(struct Device* device, struct Buffer_Descriptor buffer_description);
 
 void command_queue_destroy(struct Command_Queue* command_queue);
 void command_queue_execute(struct Command_Queue* command_queue, struct Command_List* command_lists[], size_t command_lists_count);

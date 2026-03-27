@@ -243,39 +243,27 @@ int device_create_descriptor_set(struct Device* device, enum DESCRIPTOR_TYPE des
     
     return 0;
 }
-int device_create_buffer(struct Device* device, struct Buffer_Descriptor buffer_description, struct Buffer** out_buffer)
+D3D12_RESOURCE_DESC to_d3d12_resource_desc(struct Buffer_Descriptor* buffer_description)
 {
-    *out_buffer = alloc(sizeof(struct Buffer));
-    (*out_buffer)->device = device;
-    (*out_buffer)->releasable_objects = 1;
-    (*out_buffer)->ref_count = 1;
-    (*out_buffer)->size = buffer_description.width * buffer_description.height;
-    if (buffer_description.format != FORMAT_UNKNOWN)
-        (*out_buffer)->size = ((*out_buffer)->size * format_bit_size(buffer_description.format)) / 8;
-    (*out_buffer)->buffer_type = buffer_description.buffer_type;
-
-    D3D12_HEAP_PROPERTIES defaultHeapProperties = {
-        .Type = D3D12_HEAP_TYPE_DEFAULT
-    };
     D3D12_RESOURCE_DESC resource_desc = {
         .Alignment = 0,
-        .Width = (UINT64)buffer_description.width,
-        .Height = (UINT)buffer_description.height,
-        .DepthOrArraySize = (UINT16)max(buffer_description.array_count, 1),
-        .MipLevels = (UINT16)max(buffer_description.mip_count, 1),
-        .Format = to_d3d12_format[buffer_description.format],
+        .Width = (UINT64)buffer_description->width,
+        .Height = (UINT)buffer_description->height,
+        .DepthOrArraySize = (UINT16)max(buffer_description->array_count, 1),
+        .MipLevels = (UINT16)max(buffer_description->mip_count, 1),
+        .Format = to_d3d12_format[buffer_description->format],
         .SampleDesc.Count = 1,
-        .Layout = (buffer_description.buffer_type != BUFFER_TYPE_BUFFER) ? D3D12_TEXTURE_LAYOUT_UNKNOWN : D3D12_TEXTURE_LAYOUT_ROW_MAJOR,
+        .Layout = (buffer_description->buffer_type != BUFFER_TYPE_BUFFER) ? D3D12_TEXTURE_LAYOUT_UNKNOWN : D3D12_TEXTURE_LAYOUT_ROW_MAJOR,
         .Flags = D3D12_RESOURCE_FLAG_NONE,
-        .Dimension = to_d3d12_resource_dimension[buffer_description.buffer_type]
+        .Dimension = to_d3d12_resource_dimension[buffer_description->buffer_type]
     };
 
     int uav = 0;
     int dsv = 0;
     int rtv = 0;
-    for (size_t i = 0; i < buffer_description.bind_types_count; i++)
+    for (size_t i = 0; i < buffer_description->bind_types_count; i++)
     {
-        switch (buffer_description.bind_types[i])
+        switch (buffer_description->bind_types[i])
         {
         case BIND_TYPE_UAV:
             uav = 1;
@@ -294,8 +282,24 @@ int device_create_buffer(struct Device* device, struct Buffer_Descriptor buffer_
         resource_desc.Flags |= D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS;
     if (dsv)
         resource_desc.Flags |= D3D12_RESOURCE_FLAG_ALLOW_DEPTH_STENCIL;
-    
-    HRESULT result = ID3D12Device_CreateCommittedResource(device->device, &defaultHeapProperties, D3D12_HEAP_FLAG_NONE, &resource_desc, to_d3d12_resource_state[RESOURCE_STATE_COPY_DEST], 0, &IID_ID3D12Resource, &(*out_buffer)->resource);
+    return resource_desc;
+}
+int device_create_buffer(struct Device* device, struct Buffer_Descriptor buffer_description, struct Buffer** out_buffer)
+{
+    *out_buffer = alloc(sizeof(struct Buffer));
+    (*out_buffer)->device = device;
+    (*out_buffer)->releasable_objects = 1;
+    (*out_buffer)->ref_count = 1;
+    (*out_buffer)->size = buffer_description.width * buffer_description.height;
+    if (buffer_description.format != FORMAT_UNKNOWN)
+        (*out_buffer)->size = ((*out_buffer)->size * format_bit_size(buffer_description.format)) / 8;
+    (*out_buffer)->buffer_type = buffer_description.buffer_type;
+
+    D3D12_HEAP_PROPERTIES default_heap_properties = {
+        .Type = D3D12_HEAP_TYPE_DEFAULT
+    };
+    D3D12_RESOURCE_DESC resource_desc = to_d3d12_resource_desc(&buffer_description);
+    HRESULT result = ID3D12Device_CreateCommittedResource(device->device, &default_heap_properties, D3D12_HEAP_FLAG_NONE, &resource_desc, to_d3d12_resource_state[RESOURCE_STATE_COPY_DEST], 0, &IID_ID3D12Resource, &(*out_buffer)->resource);
     result;
     (*out_buffer)->last_known_state = RESOURCE_STATE_COPY_DEST;
     
@@ -538,6 +542,16 @@ void device_pop_destroyed_objects(struct Device* device, size_t pop_count)
     size_t move_count = device->destroyed_objects_count - pop_count;
     lr_memcpy(device->destroyed_objects, device->destroyed_objects + pop_count, sizeof(struct Accessed_Object) * move_count);
     device->destroyed_objects_count -= pop_count;
+}
+struct Allocation_Info device_get_allocation_info(struct Device* device, struct Buffer_Descriptor buffer_description)
+{
+    D3D12_RESOURCE_DESC resource_desc = to_d3d12_resource_desc(&buffer_description);
+    D3D12_RESOURCE_ALLOCATION_INFO allocation_info = {0};
+    ID3D12Device_GetResourceAllocationInfo((device->device), &allocation_info, 0, 1, &resource_desc);
+    return (struct Allocation_Info){
+        .size = allocation_info.SizeInBytes,
+        .alignment = allocation_info.Alignment,
+    };
 }
 
 void command_queue_destroy(struct Command_Queue* command_queue);
@@ -812,27 +826,47 @@ void command_list_copy_upload_buffer_to_buffer(struct Command_List* command_list
     }
     else
     {
-        D3D12_TEXTURE_COPY_LOCATION dstLocation = {0};
-        dstLocation.pResource = dst->resource;
-        dstLocation.Type = D3D12_TEXTURE_COPY_TYPE_SUBRESOURCE_INDEX;
-        dstLocation.SubresourceIndex = 0;
+        D3D12_RESOURCE_DESC tex_desc = {0};
+        ID3D12Resource_GetDesc(dst->resource, &tex_desc);
+        
+        D3D12_PLACED_SUBRESOURCE_FOOTPRINT* footprints = _alloca(sizeof(D3D12_PLACED_SUBRESOURCE_FOOTPRINT) * tex_desc.MipLevels);
+        UINT* num_rows = _alloca(sizeof(UINT)* tex_desc.MipLevels);
+        UINT64* row_sizes = _alloca(sizeof(UINT64)* tex_desc.MipLevels);
+        UINT64 total_size;
 
-        D3D12_RESOURCE_DESC textureDesc = {0};
-        ID3D12Resource_GetDesc(dst->resource, &textureDesc);
+        ID3D12Device_GetCopyableFootprints(
+            command_list->device->device,
+            &tex_desc,
+            0,
+            tex_desc.MipLevels,
+            0,
+            footprints,
+            num_rows,
+            row_sizes,
+            &total_size
+        );
 
-        D3D12_PLACED_SUBRESOURCE_FOOTPRINT layout = {0};
-        UINT64 uploadBufferSize;
-        UINT numRows;
-        UINT64 rowSizeInBytes;
-        command_list->device->device->lpVtbl->GetCopyableFootprints(command_list->device->device, &textureDesc, 0, 1, 0, &layout, &numRows, &rowSizeInBytes, &uploadBufferSize);
+        for (UINT mip = 0; mip < tex_desc.MipLevels; mip++) {
+            D3D12_TEXTURE_COPY_LOCATION src_loc = {
+                .pResource        = src->resource,
+                .Type             = D3D12_TEXTURE_COPY_TYPE_PLACED_FOOTPRINT,
+                .PlacedFootprint  = footprints[mip],
+            };
 
-        D3D12_TEXTURE_COPY_LOCATION srcLocation = {0};
-        srcLocation.pResource = src->resource;
-        srcLocation.Type = D3D12_TEXTURE_COPY_TYPE_PLACED_FOOTPRINT;
-        srcLocation.PlacedFootprint = layout;
+            D3D12_TEXTURE_COPY_LOCATION dst_loc = {
+                .pResource        = dst->resource,
+                .Type             = D3D12_TEXTURE_COPY_TYPE_SUBRESOURCE_INDEX,
+                .SubresourceIndex = mip,
+            };
 
-        // ( (command_list->command_list_allocation->command_list)->lpVtbl -> CopyTextureRegion(command_list->command_list_allocation->command_list, &dstLocation, 0, 0, 0, &srcLocation, 0) );
-        ID3D12GraphicsCommandList_CopyTextureRegion(command_list->command_list_allocation->command_list, &dstLocation, 0, 0, 0, &srcLocation, 0);
+            ID3D12GraphicsCommandList_CopyTextureRegion(
+                command_list->command_list_allocation->command_list,
+                &dst_loc,
+                0, 0, 0,
+                &src_loc,
+                NULL
+            );
+        }
     }
     
     command_list_append_accessed_object(command_list, ACCESSED_OBJECT(dst));
