@@ -284,10 +284,7 @@ static size_t format_compute_mip_size(enum FORMAT format, int width, int height)
 {
     if (format_is_block_compressed(format))
     {
-        size_t block_size = (format_bit_size(format) == 4) ? 8 : 16;
-        size_t blocks_wide = (width + 3) / 4;
-        size_t blocks_high = (height + 3) / 4;
-        return (size_t)(blocks_wide * blocks_high * block_size);
+        return MAX(1, ( (width + 3) / 4 ) ) * MAX(1, ( (height + 3) / 4 ) ) * ((format_bit_size(format) == 4) ? 8 : 16);
     }
     else
     {
