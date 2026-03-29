@@ -298,7 +298,7 @@ static inline size_t format_compute_mip_size(enum FORMAT format, int width, int 
         return row_bytes * height;
     }
 }
-static inline size_t format_compute_pitch_size(enum FORMAT format, int width)
+static inline size_t format_compute_row_pitch_size(enum FORMAT format, int width)
 {
     if (format_is_block_compressed(format))
     {
