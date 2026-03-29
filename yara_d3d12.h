@@ -27,34 +27,24 @@ void mutex_lock(Mutex* mutex);
 void mutex_unlock(Mutex* mutex);
 void mutex_destroy(Mutex* mutex);
 
-#if 0
-// FNV-1a hash with 64-bit output https://gist.github.com/branw/66cd5eddb07786957f9b48fe0a85b7c7
-static inline size_t hash(const char *data, size_t dataLen) {
-    unsigned long long hash = 14695981039346656037ull;
-    for (size_t i = 0; i < dataLen; i++) {
-        hash ^= data[i];
-        hash *= 1099511628211ull;
-    }
-    return hash;
-}
-#else
+#define USE_HASHMAP 1
+
 static inline size_t hash_ptr(uintptr_t key, size_t capacity) {
     key ^= key >> 33;
     key *= 0xff51afd7ed558ccdULL;
     key ^= key >> 33;
     return key & (capacity - 1);
 }
-#endif
 
-typedef struct Entry {
-    void *key;
-    void *value;
-    struct Entry *next;  // Chaining for collision resolution
+typedef struct {
+    uintptr_t key;
+    void     *value;
+    BOOL      occupied;
 } Entry;
 typedef struct {
-    Entry   **buckets;
-    size_t    capacity;
-    size_t    count;
+    Entry  *entries;
+    size_t  capacity;
+    size_t  count;
 } HashMap;
 HashMap *map_create(void);
 void map_resize(HashMap *m);
@@ -158,7 +148,9 @@ struct Command_List
 {
     struct Command_List_Allocation* command_list_allocation;
     
+#if USE_HASHMAP
     HashMap* buffer_states_map;
+#endif
     struct Buffer_State* buffer_states;
     size_t buffer_states_size;
     size_t buffer_states_count;
@@ -188,6 +180,13 @@ struct Descriptor_Handle
     D3D12_CPU_DESCRIPTOR_HANDLE cpu_descriptor_handle;
     D3D12_GPU_DESCRIPTOR_HANDLE gpu_descriptor_handle;
 };
+#if !USE_HASHMAP
+struct Buffer_State_Index
+{
+    struct Command_List* command_list;
+    int index;
+};
+#endif
 struct Buffer
 {
     unsigned long long releasable_objects;
@@ -201,6 +200,12 @@ struct Buffer
     enum BUFFER_TYPE buffer_type;
     struct Mapped_Buffer mapped_buffer;
     unsigned int subresource_count;
+
+    #if !USE_HASHMAP
+    struct Buffer_State_Index* buffer_state_index_cache;
+    unsigned long long buffer_state_index_cache_size;
+    unsigned long long buffer_state_index_cache_count;
+    #endif
 };
 struct Upload_Buffer
 {
@@ -662,5 +667,12 @@ struct Delayed_Queue delayed_queue_create();
 struct Mapped_Buffer delayed_queue_get(struct Delayed_Queue* queue, unsigned int index);
 void delayed_queue_push_back(struct Delayed_Queue* queue, struct Mapped_Buffer* mapped_buffer);
 struct Mapped_Buffer delayed_queue_pop_front(struct Delayed_Queue* queue);
+
+#if !USE_HASHMAP
+void buffer_resize_buffer_state_cache(struct Buffer* buffer);
+void buffer_append_buffer_state_cache(struct Buffer* buffer, struct Command_List* command_list, int index);
+int buffer_get_buffer_state_cache(struct Buffer* buffer, struct Command_List* command_list);
+int buffer_remove_buffer_state_cache(struct Buffer* buffer, struct Command_List* command_list);
+#endif
 
 #endif

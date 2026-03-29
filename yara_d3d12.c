@@ -61,97 +61,66 @@ void mutex_destroy(Mutex* mutex)
 #define MAP_INITIAL_CAPACITY 64
 #define MAP_LOAD_FACTOR      0.75
 HashMap *map_create(void) {
-    HashMap *m  = alloc(sizeof *m);
+    HashMap *m  = malloc(sizeof *m);
     m->capacity = MAP_INITIAL_CAPACITY;
     m->count    = 0;
-    m->buckets  = calloc(m->capacity, sizeof(Entry *));
+    m->entries  = calloc(m->capacity, sizeof(Entry));
     return m;
 }
 void map_resize(HashMap *m) {
     size_t  new_cap     = m->capacity * 2;
-    Entry **new_buckets = alloc(sizeof(Entry *) * new_cap);
+    Entry  *new_entries = calloc(new_cap, sizeof(Entry));
 
+    // Rehash all occupied entries into new array
     for (size_t i = 0; i < m->capacity; i++) {
-        Entry *e = m->buckets[i];
-        while (e) {
-            Entry *next = e->next;
+        Entry *e = &m->entries[i];
+        if (!e->occupied) continue;
 
-            size_t j  = hash_ptr((uintptr_t)e->key, new_cap);
-            e->next   = new_buckets[j];
-            new_buckets[j] = e;
-
-            e = next;
-        }
+        size_t j = hash_ptr(e->key, new_cap);
+        while (new_entries[j].occupied)
+            j = (j + 1) & (new_cap - 1);  // Linear probe
+        new_entries[j] = *e;
     }
 
-    free(m->buckets);
-    m->buckets  = new_buckets;
+    free(m->entries);
+    m->entries  = new_entries;
     m->capacity = new_cap;
 }
-void map_set(HashMap *m, void *key, void *value) {
-    size_t i = hash_ptr((uintptr_t)key, m->capacity);
-
-    for (Entry *e = m->buckets[i]; e; e = e->next) {
-        if (e->key == key) {
-            e->value = value;
-            return;
-        }
-    }
-
-    Entry *e      = alloc(sizeof *e);
-    e->key        = key;
-    e->value      = value;
-    e->next       = m->buckets[i];
-    m->buckets[i] = e;
-    m->count++;
-
+void map_set(HashMap *m, void *ptr, void *value) {
     if ((double)m->count / (double)m->capacity > MAP_LOAD_FACTOR)
         map_resize(m);
+
+    uintptr_t key = (uintptr_t)ptr;
+    size_t i = hash_ptr(key, m->capacity);
+
+    while (m->entries[i].occupied) {
+        if (m->entries[i].key == key) {
+            m->entries[i].value = value;  // Update existing
+            return;
+        }
+        i = (i + 1) & (m->capacity - 1);
+    }
+
+    m->entries[i] = (Entry){ .key = key, .value = value, .occupied = TRUE };
+    m->count++;
 }
-void *map_get(HashMap *m, void *key) {
-    size_t i = hash_ptr((uintptr_t)key, m->capacity);
-    for (Entry *e = m->buckets[i]; e; e = e->next) {
-        if (e->key == key)
-            return e->value;
+void *map_get(HashMap *m, void *ptr) {
+    uintptr_t key = (uintptr_t)ptr;
+    size_t i = hash_ptr(key, m->capacity);
+
+    while (m->entries[i].occupied) {
+        if (m->entries[i].key == key)
+            return m->entries[i].value;
+        i = (i + 1) & (m->capacity - 1);
     }
     return NULL;
 }
-void map_delete(HashMap *m, const char *key) {
-    size_t i   = hash_ptr((uintptr_t)key, m->capacity);
-    Entry **ep = &m->buckets[i];
-    while (*ep) {
-        Entry *e = *ep;
-        if (strcmp(e->key, key) == 0) {
-            *ep = e->next;
-            free(e);
-            m->count--;
-            return;
-        }
-        ep = &e->next;
-    }
-}
 void map_reset(HashMap *m) {
-    for (size_t i = 0; i < m->capacity; i++) {
-        Entry *e = m->buckets[i];
-        while (e) {
-            Entry *next = e->next;
-            free(e);
-            e = next;
-        }
-        m->buckets[i] = NULL;
-    }
+    memset(m->entries, 0, m->capacity * sizeof(Entry));
     m->count = 0;
 }
 void map_free(HashMap *m) {
-    for (size_t i = 0; i < m->capacity; i++) {
-        Entry *e = m->buckets[i];
-        while (e) {
-            Entry *next = e->next;
-            free(e);
-            e = next;
-        }
-    }
-    free(m->buckets);
+    free(m->entries);
     free(m);
 }
 
@@ -310,7 +279,9 @@ int device_create_command_list(struct Device* device, struct Command_List** out_
 {
     *out_command_list = alloc(sizeof(struct Command_List));
 
+    #if USE_HASHMAP
     (*out_command_list)->buffer_states_map = map_create();
+    #endif
     (*out_command_list)->buffer_states_size = 16;
     (*out_command_list)->buffer_states = alloc(sizeof(struct Buffer_State) * (*out_command_list)->buffer_states_size);
     (*out_command_list)->required_buffer_states_size = 16;
@@ -401,6 +372,10 @@ int device_create_buffer(struct Device* device, struct Buffer_Descriptor buffer_
     result;
     (*out_buffer)->last_known_state = RESOURCE_STATE_COPY_DEST;
     (*out_buffer)->subresource_count = resource_desc.MipLevels * resource_desc.DepthOrArraySize;
+    #if !USE_HASHMAP
+    (*out_buffer)->buffer_state_index_cache_size = 16;
+    (*out_buffer)->buffer_state_index_cache = alloc(sizeof(struct Buffer_State_Index) * (*out_buffer)->buffer_state_index_cache_size);
+    #endif
     
     return 0;
 }
@@ -761,6 +736,10 @@ int swapchain_create_backbuffers(struct Swapchain* swapchain, struct Device* dev
         buffer->releasable_objects = 1;
         buffer->ref_count = 1;
         buffer->subresource_count = 1;
+        #if !USE_HASHMAP
+        buffer->buffer_state_index_cache_size = 16;
+        buffer->buffer_state_index_cache = alloc(sizeof(struct Buffer_State_Index) * buffer->buffer_state_index_cache_size);
+        #endif
         IDXGISwapChain3_GetBuffer(swapchain->swapchain, i, &IID_ID3D12Resource, &buffer->resource);
 
         device_create_render_target_view(device, 0, rtv_descriptor_set, buffer, &out_rtvs[i]);
@@ -806,7 +785,15 @@ void command_list_reset(struct Command_List* command_list)
     ID3D12CommandAllocator_Reset(command_list->command_list_allocation->command_allocator);
     ID3D12GraphicsCommandList_Reset(command_list->command_list_allocation->command_list, command_list->command_list_allocation->command_allocator, 0);
 
+    #if USE_HASHMAP
     map_reset(command_list->buffer_states_map);
+    #else
+    for (size_t i = 0; i < command_list->buffer_states_count; i++)
+    {
+        buffer_remove_buffer_state_cache(command_list->buffer_states[i].buffer, command_list);
+    }
+    #endif
+    
     command_list->buffer_states_count = 0;
     command_list->required_buffer_states_count = 0;
     command_list->accessed_objects_count = 0;
@@ -997,11 +984,15 @@ int find_buffer_state_index(struct Command_List* command_list, struct Buffer* bu
         }
     }
     #endif
+    #if USE_HASHMAP
     void* ptr = map_get(command_list->buffer_states_map, buffer);
     if (ptr == NULL)
         return -1;
     else
         return (int)(unsigned long long)ptr;
+    #else
+    return buffer_get_buffer_state_cache(buffer, command_list);
+    #endif
 }
 void command_list_set_buffer_state(struct Command_List* command_list, struct Buffer* buffer, enum RESOURCE_STATE to_state)
 {
@@ -1074,7 +1065,11 @@ void command_list_append_buffer_state(struct Command_List* command_list, struct 
 
     size_t index = command_list->buffer_states_count++;
     command_list->buffer_states[index] = buffer_state;
+    #if USE_HASHMAP
     map_set(command_list->buffer_states_map, buffer_state.buffer, (void*)index);
+    #else
+    buffer_append_buffer_state_cache(buffer_state.buffer, command_list, (int)index);
+    #endif
 }
 void command_list_append_required_buffer_state(struct Command_List* command_list, struct Buffer_State buffer_state)
 {
@@ -1135,6 +1130,55 @@ void buffer_set_name(struct Buffer* buffer, const char* name)
     mbstowcs(w_name, name, strlen(name));
     ID3D12Resource_SetName(buffer->resource, w_name);
 }
+#if !USE_HASHMAP
+void buffer_resize_buffer_state_cache(struct Buffer* buffer)
+{
+    unsigned long long new_buffer_state_index_cache_size = buffer->buffer_state_index_cache_size * 2;
+    struct Buffer_State_Index* new_buffer_state_index_cache = alloc(sizeof(struct Buffer_State_Index) * new_buffer_state_index_cache_size);
+    memcpy(new_buffer_state_index_cache, buffer->buffer_state_index_cache, sizeof(struct Buffer_State_Index) * buffer->buffer_state_index_cache_size);
+    free(buffer->buffer_state_index_cache);
+    buffer->buffer_state_index_cache = new_buffer_state_index_cache;
+    buffer->buffer_state_index_cache_size = new_buffer_state_index_cache_size;
+}
+void buffer_append_buffer_state_cache(struct Buffer* buffer, struct Command_List* command_list, int index)
+{
+    buffer->buffer_state_index_cache[buffer->buffer_state_index_cache_count++] = (struct Buffer_State_Index){ command_list, index };
+    if (buffer->buffer_state_index_cache_count >= buffer->buffer_state_index_cache_size)
+        buffer_resize_buffer_state_cache(buffer);
+}
+int buffer_get_buffer_state_cache(struct Buffer* buffer, struct Command_List* command_list)
+{
+    if (buffer->buffer_state_index_cache_count == 0)
+        return -1;
+    
+    for (size_t i = 0; i < buffer->buffer_state_index_cache_count; i++)
+    {
+        if (command_list == buffer->buffer_state_index_cache[i].command_list)
+        {
+            return buffer->buffer_state_index_cache[i].index;
+        }
+    }
+    
+    return -1;
+}
+int buffer_remove_buffer_state_cache(struct Buffer* buffer, struct Command_List* command_list)
+{
+    if (buffer->buffer_state_index_cache_count == 0)
+        return -1;
+    
+    for (size_t i = 0; i < buffer->buffer_state_index_cache_count; i++)
+    {
+        if (command_list == buffer->buffer_state_index_cache[i].command_list)
+        {
+            int index = buffer->buffer_state_index_cache[i].index;
+            buffer->buffer_state_index_cache[i] = buffer->buffer_state_index_cache[--buffer->buffer_state_index_cache_count];
+            return index;
+        }
+    }
+    
+    return -1;
+}
+#endif
 
 void upload_buffer_destroy(struct Upload_Buffer* upload_buffer)
 {
