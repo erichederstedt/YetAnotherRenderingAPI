@@ -27,6 +27,43 @@ void mutex_lock(Mutex* mutex);
 void mutex_unlock(Mutex* mutex);
 void mutex_destroy(Mutex* mutex);
 
+#if 0
+// FNV-1a hash with 64-bit output https://gist.github.com/branw/66cd5eddb07786957f9b48fe0a85b7c7
+static inline size_t hash(const char *data, size_t dataLen) {
+    unsigned long long hash = 14695981039346656037ull;
+    for (size_t i = 0; i < dataLen; i++) {
+        hash ^= data[i];
+        hash *= 1099511628211ull;
+    }
+    return hash;
+}
+#else
+static inline size_t hash_ptr(uintptr_t key, size_t capacity) {
+    key ^= key >> 33;
+    key *= 0xff51afd7ed558ccdULL;
+    key ^= key >> 33;
+    return key & (capacity - 1);
+}
+#endif
+
+typedef struct Entry {
+    void *key;
+    void *value;
+    struct Entry *next;  // Chaining for collision resolution
+} Entry;
+typedef struct {
+    Entry   **buckets;
+    size_t    capacity;
+    size_t    count;
+} HashMap;
+HashMap *map_create(void);
+void map_resize(HashMap *m);
+void map_set(HashMap *m, void *key, void *value);
+void *map_get(HashMap *m, void *key);
+void map_delete(HashMap *m, void *key);
+void map_reset(HashMap *m);
+void map_free(HashMap *m);
+
 #define ARRAY_COUNT(Array) (sizeof(Array)/sizeof((Array)[0]))
 // #define BACKBUFFER_COUNT 2
 #define ID3DBlob_QueryInterface(self, riid, ppvObject) ((self)->lpVtbl->QueryInterface(self, riid, ppvObject))
@@ -121,6 +158,7 @@ struct Command_List
 {
     struct Command_List_Allocation* command_list_allocation;
     
+    HashMap* buffer_states_map;
     struct Buffer_State* buffer_states;
     size_t buffer_states_size;
     size_t buffer_states_count;
@@ -162,6 +200,7 @@ struct Buffer
     unsigned long long size;
     enum BUFFER_TYPE buffer_type;
     struct Mapped_Buffer mapped_buffer;
+    unsigned int subresource_count;
 };
 struct Upload_Buffer
 {
