@@ -110,7 +110,6 @@ struct Delayed_Queue {
     unsigned int size;
     unsigned int length;
     unsigned int start;
-    unsigned int end;
 };
 struct Device
 {

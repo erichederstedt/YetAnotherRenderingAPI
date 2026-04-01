@@ -1538,7 +1538,6 @@ struct Delayed_Queue delayed_queue_create()
         alloc(sizeof(struct Mapped_Buffer) * default_size),
         default_size,
         0,
-        0,
         0
     };
 }
@@ -1549,15 +1548,11 @@ struct Mapped_Buffer delayed_queue_get(struct Delayed_Queue* queue, unsigned int
 }
 void delayed_queue_push_back(struct Delayed_Queue* queue, struct Mapped_Buffer* mapped_buffer)
 {
-    unsigned int index = queue->end++;
+    unsigned int index = (queue->start + queue->length) % queue->size;
     queue->buffer[index] = *mapped_buffer;
     queue->length++;
 
-    if (queue->end == queue->size)
-    {
-        queue->end = 0;
-    }
-    if (queue->end == queue->start)
+    if (queue->length == queue->size)
     {
         unsigned int new_size = queue->size * 2;
         struct Mapped_Buffer* new_buffer = alloc(sizeof(struct Mapped_Buffer) * new_size);
@@ -1566,7 +1561,6 @@ void delayed_queue_push_back(struct Delayed_Queue* queue, struct Mapped_Buffer* 
             new_buffer[i] = delayed_queue_get(queue, i);
         }
         queue->start = 0;
-        queue->end = queue->length;
         free(queue->buffer);
         queue->buffer = new_buffer;
         queue->size = new_size;
@@ -1575,15 +1569,9 @@ void delayed_queue_push_back(struct Delayed_Queue* queue, struct Mapped_Buffer* 
 // TODO: delayed_queue_push_front
 struct Mapped_Buffer delayed_queue_pop_front(struct Delayed_Queue* queue)
 {
-    unsigned int index = queue->start++;
+    unsigned int index = queue->start;
+    queue->start = (queue->start + 1) % queue->size;
     queue->length--;
-
-    if (queue->start == queue->size)
-    {
-        queue->start = 0;
-    }
-    // Could implement shrinking behavior when queue->start == queue->end
-
     return queue->buffer[index];
 }
 // TODO: delayed_queue_push_back
