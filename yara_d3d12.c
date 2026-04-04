@@ -368,7 +368,15 @@ int device_create_buffer(struct Device* device, struct Buffer_Descriptor buffer_
         .Type = D3D12_HEAP_TYPE_DEFAULT
     };
     D3D12_RESOURCE_DESC resource_desc = to_d3d12_resource_desc(&buffer_description);
-    HRESULT result = ID3D12Device_CreateCommittedResource(device->device, &default_heap_properties, D3D12_HEAP_FLAG_NONE, &resource_desc, to_d3d12_resource_state[RESOURCE_STATE_COPY_DEST], 0, &IID_ID3D12Resource, &(*out_buffer)->resource);
+    D3D12_CLEAR_VALUE* ptrClearValue = 0;
+    D3D12_CLEAR_VALUE clearValue = {0};
+    if (resource_desc.Flags & (D3D12_RESOURCE_FLAG_ALLOW_RENDER_TARGET | D3D12_RESOURCE_FLAG_ALLOW_DEPTH_STENCIL))
+    {
+        ptrClearValue = &clearValue;
+        clearValue.Format = resource_desc.Format;
+        clearValue.DepthStencil.Depth = 1.0f;
+    }
+    HRESULT result = ID3D12Device_CreateCommittedResource(device->device, &default_heap_properties, D3D12_HEAP_FLAG_NONE, &resource_desc, to_d3d12_resource_state[RESOURCE_STATE_COPY_DEST], ptrClearValue, &IID_ID3D12Resource, &(*out_buffer)->resource);
     result;
     (*out_buffer)->last_known_state = RESOURCE_STATE_COPY_DEST;
     (*out_buffer)->subresource_count = resource_desc.MipLevels * resource_desc.DepthOrArraySize;
