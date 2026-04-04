@@ -1206,6 +1206,7 @@ void device_create_shader_resource_view(struct Device* device, struct Shader_Res
     (*out_shader_resource_view)->device = device;
 
     D3D12_SHADER_RESOURCE_VIEW_DESC srv_desc = {0};
+    srv_desc.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
 
     if (opt_descriptor)
     {
