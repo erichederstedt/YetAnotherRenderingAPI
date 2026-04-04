@@ -920,16 +920,16 @@ void command_list_copy_upload_buffer_to_buffer(struct Command_List* command_list
 {
     command_list_set_buffer_state(command_list, dst, RESOURCE_STATE_COPY_DEST);
 
+    D3D12_RESOURCE_DESC desc = {0};
+    ID3D12Resource_GetDesc(dst->resource, &desc);
+
     if (dst->buffer_type == BUFFER_TYPE_BUFFER)
     {
-        ID3D12GraphicsCommandList_CopyResource(command_list->command_list_allocation->command_list, dst->resource, src->resource);
+        ID3D12GraphicsCommandList_CopyBufferRegion(command_list->command_list_allocation->command_list, dst->resource, 0, src->resource, 0, desc.Width);
     }
     else
     {
-        D3D12_RESOURCE_DESC tex_desc = {0};
-        ID3D12Resource_GetDesc(dst->resource, &tex_desc);
-        UINT subresource_count = tex_desc.MipLevels * tex_desc.DepthOrArraySize;
-
+        UINT subresource_count = desc.MipLevels * desc.DepthOrArraySize;
         D3D12_PLACED_SUBRESOURCE_FOOTPRINT* footprints = _alloca(sizeof(D3D12_PLACED_SUBRESOURCE_FOOTPRINT) * subresource_count);
         UINT* num_rows = _alloca(sizeof(UINT)* subresource_count);
         UINT64* row_sizes = _alloca(sizeof(UINT64)* subresource_count);
@@ -937,7 +937,7 @@ void command_list_copy_upload_buffer_to_buffer(struct Command_List* command_list
 
         ID3D12Device_GetCopyableFootprints(
             command_list->device->device,
-            &tex_desc,
+            &desc,
             0,
             subresource_count,
             0,
