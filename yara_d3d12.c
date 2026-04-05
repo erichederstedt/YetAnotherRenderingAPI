@@ -441,18 +441,16 @@ int device_create_shader(struct Device* device, struct Shader** out_shader)
     // ID3D12Device_CreateRootSignature(device->device, 0, ID3DBlob_GetBufferPointer((*out_shader)->signature_blob),  ID3DBlob_GetBufferSize((*out_shader)->signature_blob), &IID_ID3D12RootSignature, &(*out_shader)->root_signature);
     
     ID3DBlob* error_blob = 0;
-    HRESULT vs_error = D3DCompileFromFile(L"./shader.hlsl", 0, 0, "VSMain", "vs_5_0", D3DCOMPILE_DEBUG | D3DCOMPILE_SKIP_OPTIMIZATION, 0, &(*out_shader)->vs_code_blob, &error_blob); // D3DCOMPILE_OPTIMIZATION_LEVEL3
-    if (FAILED(vs_error) || error_blob)
-    {
-        printf("%s\n", (char*)error_blob->lpVtbl->GetBufferPointer(error_blob));
+    HRESULT vs_error = D3DCompileFromFile(L"./shader.hlsl", 0, D3D_COMPILE_STANDARD_FILE_INCLUDE, "VSMain", "vs_5_0", D3DCOMPILE_DEBUG | D3DCOMPILE_SKIP_OPTIMIZATION, 0, &(*out_shader)->vs_code_blob, &error_blob); // D3DCOMPILE_OPTIMIZATION_LEVEL3
+    if (error_blob)
+        printf("VS Error - %s\n", (char*)error_blob->lpVtbl->GetBufferPointer(error_blob));
+    if (FAILED(vs_error))
         __debugbreak();
-    }
-    HRESULT ps_error = D3DCompileFromFile(L"./shader.hlsl", 0, 0, "PSMain", "ps_5_0", D3DCOMPILE_DEBUG | D3DCOMPILE_SKIP_OPTIMIZATION, 0, &(*out_shader)->ps_code_blob, &error_blob);
-    if (FAILED(ps_error) || error_blob)
-    {
-        printf("%s\n", (char*)error_blob->lpVtbl->GetBufferPointer(error_blob));
+    HRESULT ps_error = D3DCompileFromFile(L"./shader.hlsl", 0, D3D_COMPILE_STANDARD_FILE_INCLUDE, "PSMain", "ps_5_0", D3DCOMPILE_DEBUG | D3DCOMPILE_SKIP_OPTIMIZATION, 0, &(*out_shader)->ps_code_blob, &error_blob);
+    if (error_blob)
+        printf("PS Error - %s\n", (char*)error_blob->lpVtbl->GetBufferPointer(error_blob));
+    if (FAILED(ps_error))
         __debugbreak();
-    }
 
     HRESULT hr = D3DGetBlobPart(ID3DBlob_GetBufferPointer((*out_shader)->vs_code_blob), ID3DBlob_GetBufferSize((*out_shader)->vs_code_blob), D3D_BLOB_ROOT_SIGNATURE, 0, &(*out_shader)->signature_blob);
     if (FAILED(hr))
