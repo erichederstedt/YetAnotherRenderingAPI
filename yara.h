@@ -300,7 +300,11 @@ static inline size_t format_compute_mip_size(enum FORMAT format, int width, int 
 }
 static inline size_t format_compute_row_pitch_size(enum FORMAT format, int width)
 {
-    if (format_is_block_compressed(format))
+    if (format == FORMAT_UNKNOWN)
+    {
+        return width;
+    }
+    else if (format_is_block_compressed(format))
     {
         return MAX( 1, ((width+3)/4) ) * ((format_bit_size(format) == 4) ? 8 : 16);
     }

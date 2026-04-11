@@ -214,6 +214,7 @@ struct Upload_Buffer
     unsigned long long ref_count;
 
     struct Device* device;
+    void* intermediate_buffer;
 };
 struct Shader_Resource_View
 {
@@ -642,6 +643,7 @@ struct Command_List_Allocation* device_create_command_list_allocation(struct Dev
 void device_release_destroyed_objects(struct Device* device);
 void device_append_destroyed_objects(struct Device* device, struct Accessed_Object accessed_object);
 void device_pop_destroyed_objects(struct Device* device, size_t pop_count);
+D3D12_RESOURCE_DESC to_d3d12_resource_desc(struct Buffer_Descriptor* buffer_description);
 
 struct Descriptor_Handle descriptor_set_alloc(struct Descriptor_Set* descriptor_set);
 
@@ -673,5 +675,7 @@ void buffer_append_buffer_state_cache(struct Buffer* buffer, struct Command_List
 int buffer_get_buffer_state_cache(struct Buffer* buffer, struct Command_List* command_list);
 int buffer_remove_buffer_state_cache(struct Buffer* buffer, struct Command_List* command_list);
 #endif
+
+void copy_unpack(unsigned char* dst, unsigned char* src, D3D12_RESOURCE_DESC resource_desc);
 
 #endif

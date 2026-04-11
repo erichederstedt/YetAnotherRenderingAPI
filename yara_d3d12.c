@@ -359,9 +359,7 @@ int device_create_buffer(struct Device* device, struct Buffer_Descriptor buffer_
     (*out_buffer)->device = device;
     (*out_buffer)->releasable_objects = 1;
     (*out_buffer)->ref_count = 1;
-    (*out_buffer)->size = buffer_description.width * buffer_description.height;
-    if (buffer_description.format != FORMAT_UNKNOWN)
-        (*out_buffer)->size = ((*out_buffer)->size * format_bit_size(buffer_description.format)) / 8;
+    (*out_buffer)->size = device_get_allocation_info(device, buffer_description).size;
     (*out_buffer)->buffer_type = buffer_description.buffer_type;
 
     D3D12_HEAP_PROPERTIES default_heap_properties = {
@@ -394,6 +392,7 @@ int device_create_upload_buffer(struct Device* device, void* opt_data, unsigned 
     (*out_upload_buffer)->ref_count = 1;
 
     (*out_upload_buffer)->device = device;
+    (*out_upload_buffer)->intermediate_buffer = alloc(data_size);
 
     D3D12_HEAP_PROPERTIES UploadHeapProperties = {
         .Type = D3D12_HEAP_TYPE_UPLOAD,
@@ -929,6 +928,14 @@ void command_list_copy_upload_buffer_to_buffer(struct Command_List* command_list
     D3D12_RESOURCE_DESC desc = {0};
     ID3D12Resource_GetDesc(dst->resource, &desc);
 
+    {
+        D3D12_RANGE read_range = {0};
+        void *mapped_address = 0;
+        ID3D12Resource_Map(src->resource, 0, &read_range, &mapped_address);
+        copy_unpack(mapped_address, src->intermediate_buffer, desc);
+        ID3D12Resource_Unmap(src->resource, 0, 0);
+    }
+
     if (dst->buffer_type == BUFFER_TYPE_BUFFER)
     {
         ID3D12GraphicsCommandList_CopyBufferRegion(command_list->command_list_allocation->command_list, dst->resource, 0, src->resource, 0, desc.Width);
@@ -1192,14 +1199,11 @@ void upload_buffer_destroy(struct Upload_Buffer* upload_buffer)
 }
 void* upload_buffer_map(struct Upload_Buffer* upload_buffer)
 {
-    D3D12_RANGE read_range = {0};
-    void *mapped_address = 0;
-    ID3D12Resource_Map(upload_buffer->resource, 0, &read_range, &mapped_address);
-    return mapped_address;
+    return upload_buffer->intermediate_buffer;
 }
 void upload_buffer_unmap(struct Upload_Buffer* upload_buffer)
 {
-    ID3D12Resource_Unmap(upload_buffer->resource, 0, 0);
+    upload_buffer;
 }
 
 void device_create_shader_resource_view(struct Device* device, struct Shader_Resource_View_Descriptor* opt_descriptor, struct Descriptor_Set* descriptor_set, struct Buffer* buffer, struct Shader_Resource_View** out_shader_resource_view)
@@ -1582,3 +1586,52 @@ struct Mapped_Buffer delayed_queue_pop_front(struct Delayed_Queue* queue)
     return queue->buffer[index];
 }
 // TODO: delayed_queue_push_back
+
+#ifndef MAX
+#define YARA_MAX
+#define MAX(a, b) (((a) > (b)) ? (a) : (b))
+#endif
+void copy_unpack(unsigned char* dst, unsigned char* src, D3D12_RESOURCE_DESC resource_desc)
+{
+    enum FORMAT texture_format = to_yara_format[resource_desc.Format];
+
+    size_t read_offset = 0;
+    size_t write_offset = 0;
+    for (unsigned int array_element = 0; array_element < resource_desc.DepthOrArraySize; array_element++)
+    {
+        for (unsigned int mip = 0; mip < resource_desc.MipLevels; ++mip)
+        {
+            int mip_width = MAX(1, (int)resource_desc.Width >> mip);
+            int mip_height = MAX(1, resource_desc.Height >> mip);
+            // size_t mip_size = format_compute_mip_size(texture_format, mip_width, mip_height);
+            size_t src_row_pitch = format_compute_row_pitch_size(texture_format, mip_width);
+            size_t dst_row_pitch = (src_row_pitch + 255) & ~255; // align to 256
+
+            size_t row_count = mip_height;
+            if (format_is_block_compressed(texture_format))
+            { // block compressed formats use block rows instead of pixel rows
+                row_count = (mip_height + 3) / 4;
+            }
+
+            unsigned char* dst_mip = dst + write_offset;
+            unsigned char* src_mip = src + read_offset;
+
+            for (int row = 0; row < row_count; ++row)
+            {
+                memcpy(dst_mip + row * dst_row_pitch,
+                    src_mip + row * src_row_pitch,
+                    src_row_pitch);
+            }
+
+            read_offset  += src_row_pitch * row_count;
+            write_offset += dst_row_pitch * row_count;
+
+            // align to 512
+            write_offset = (write_offset + 511) & ~511;
+        }
+    }
+}
+#ifdef YARA_MAX
+#undef YARA_MAX
+#undef MAX
+#endif
