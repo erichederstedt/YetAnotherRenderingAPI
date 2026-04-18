@@ -251,7 +251,7 @@ int device_create_swapchain(struct Device* device, struct Command_Queue* command
         .Scaling = DXGI_SCALING_STRETCH,
         .SwapEffect = DXGI_SWAP_EFFECT_FLIP_DISCARD,
         .AlphaMode = DXGI_ALPHA_MODE_IGNORE,
-        .Flags = DXGI_SWAP_CHAIN_FLAG_ALLOW_TEARING
+        .Flags = DXGI_SWAP_CHAIN_FLAG_ALLOW_TEARING//DXGI_SWAP_CHAIN_FLAG_ALLOW_TEARING
     };
     IDXGISwapChain1 *swapchain1 = 0;
     IDXGIFactory2_CreateSwapChainForHwnd(device->factory, (IUnknown*)command_queue->command_queue, (HWND)swapchain_descriptor.window, &d3d12_swapchain_description, 0, 0, &swapchain1);
@@ -425,10 +425,6 @@ int device_create_upload_buffer(struct Device* device, void* opt_data, unsigned 
 #include <stdio.h>
 int device_create_shader(struct Device* device, struct Shader** out_shader)
 {
-    *out_shader = alloc(sizeof(struct Shader));
-    (*out_shader)->releasable_objects = 4;
-    (*out_shader)->ref_count = 1;
-
     // D3D12_ROOT_SIGNATURE_DESC RootSignatureDesc = {
     //     .NumParameters = 0,
     //     .pParameters = 0,
@@ -440,16 +436,25 @@ int device_create_shader(struct Device* device, struct Shader** out_shader)
     // ID3D12Device_CreateRootSignature(device->device, 0, ID3DBlob_GetBufferPointer((*out_shader)->signature_blob),  ID3DBlob_GetBufferSize((*out_shader)->signature_blob), &IID_ID3D12RootSignature, &(*out_shader)->root_signature);
     
     ID3DBlob* error_blob = 0;
-    HRESULT vs_error = D3DCompileFromFile(L"./shader.hlsl", 0, D3D_COMPILE_STANDARD_FILE_INCLUDE, "VSMain", "vs_5_0", D3DCOMPILE_DEBUG | D3DCOMPILE_SKIP_OPTIMIZATION, 0, &(*out_shader)->vs_code_blob, &error_blob); // D3DCOMPILE_OPTIMIZATION_LEVEL3
+    ID3DBlob* vs_code_blob = 0;
+    ID3DBlob* ps_code_blob = 0;
+    HRESULT vs_error = D3DCompileFromFile(L"./shader.hlsl", 0, D3D_COMPILE_STANDARD_FILE_INCLUDE, "VSMain", "vs_5_0", D3DCOMPILE_DEBUG | D3DCOMPILE_SKIP_OPTIMIZATION, 0, &vs_code_blob, &error_blob); // D3DCOMPILE_OPTIMIZATION_LEVEL3
     if (error_blob)
         printf("VS Error - %s\n", (char*)error_blob->lpVtbl->GetBufferPointer(error_blob));
     if (FAILED(vs_error))
-        __debugbreak();
-    HRESULT ps_error = D3DCompileFromFile(L"./shader.hlsl", 0, D3D_COMPILE_STANDARD_FILE_INCLUDE, "PSMain", "ps_5_0", D3DCOMPILE_DEBUG | D3DCOMPILE_SKIP_OPTIMIZATION, 0, &(*out_shader)->ps_code_blob, &error_blob);
+        return 1;
+    HRESULT ps_error = D3DCompileFromFile(L"./shader.hlsl", 0, D3D_COMPILE_STANDARD_FILE_INCLUDE, "PSMain", "ps_5_0", D3DCOMPILE_DEBUG | D3DCOMPILE_SKIP_OPTIMIZATION, 0, &ps_code_blob, &error_blob);
     if (error_blob)
         printf("PS Error - %s\n", (char*)error_blob->lpVtbl->GetBufferPointer(error_blob));
     if (FAILED(ps_error))
-        __debugbreak();
+        return 1;
+
+    *out_shader = alloc(sizeof(struct Shader));
+    (*out_shader)->releasable_objects = 4;
+    (*out_shader)->ref_count = 1;
+
+    (*out_shader)->vs_code_blob = vs_code_blob;
+    (*out_shader)->ps_code_blob = ps_code_blob;
 
     HRESULT hr = D3DGetBlobPart(ID3DBlob_GetBufferPointer((*out_shader)->vs_code_blob), ID3DBlob_GetBufferSize((*out_shader)->vs_code_blob), D3D_BLOB_ROOT_SIGNATURE, 0, &(*out_shader)->signature_blob);
     if (FAILED(hr))
