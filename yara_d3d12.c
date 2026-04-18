@@ -728,6 +728,7 @@ void command_queue_execute(struct Command_Queue* command_queue, struct Command_L
             device_append_destroyed_objects(command_queue->device, accessed_object);
         }
     }
+    device_delayed_free_queue_update(command_queue->device);
     
     mutex_unlock(&command_queue->device->mutex);
 }
