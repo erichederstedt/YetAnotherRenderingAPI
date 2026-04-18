@@ -205,7 +205,10 @@ struct Buffer
     union
     {
         struct Command_List* upload_command_list; // buffer_usage == STATIC
-        void* intermediate_buffer; // buffer_usage == DYNAMIC
+        struct {
+            void* intermediate_buffer; 
+            void* persistant_map; 
+        } dynamic_info; // buffer_usage == DYNAMIC
     } buffer_map_info;
 
     #if !USE_HASHMAP

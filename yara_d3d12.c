@@ -1183,10 +1183,10 @@ void* buffer_map(struct Buffer* buffer)
         buffer_ptr = command_list_map_buffer(buffer->buffer_map_info.upload_command_list, buffer);
         break;
     case BUFFER_USAGE_DYNAMIC:
-        if (!buffer->buffer_map_info.intermediate_buffer)
-            buffer->buffer_map_info.intermediate_buffer = alloc(buffer->size);
+        if (!buffer->buffer_map_info.dynamic_info.intermediate_buffer)
+            buffer->buffer_map_info.dynamic_info.intermediate_buffer = alloc(buffer->size);
         
-        buffer_ptr = buffer->buffer_map_info.intermediate_buffer;
+        buffer_ptr = buffer->buffer_map_info.dynamic_info.intermediate_buffer;
         break;
     }
 
@@ -1206,10 +1206,10 @@ void buffer_unmap(struct Buffer* buffer)
         ID3D12Resource_GetDesc(buffer->resource, &desc);
         {
             D3D12_RANGE read_range = {0};
-            void *mapped_address = 0;
-            ID3D12Resource_Map(buffer->resource, 0, &read_range, &mapped_address);
-            copy_unpack(mapped_address, buffer->buffer_map_info.intermediate_buffer, desc);
-            ID3D12Resource_Unmap(buffer->resource, 0, 0);
+            if (!buffer->buffer_map_info.dynamic_info.persistant_map)
+                ID3D12Resource_Map(buffer->resource, 0, &read_range, &buffer->buffer_map_info.dynamic_info.persistant_map);
+            copy_unpack(buffer->buffer_map_info.dynamic_info.persistant_map, buffer->buffer_map_info.dynamic_info.intermediate_buffer, desc);
+            // ID3D12Resource_Unmap(buffer->resource, 0, 0);
         }
         break;
     }
@@ -1594,7 +1594,13 @@ struct Mapped_Buffer mega_alloc(struct Device* device, size_t size)
 {
     unsigned int index = ceil_log2((unsigned int)size);
     if (index > MAX_MAPPED_BUFFER_POOLS) // size > MB(64) is not allowed!
-        return (struct Mapped_Buffer){0};
+    {
+        struct Mapped_Buffer mapped_buffer = {0};
+        device_create_upload_buffer(device, 0, size, &mapped_buffer.upload_buffer);
+        mapped_buffer.index = SIZE_MAX;
+        mapped_buffer.pool_index = SIZE_MAX;
+        return mapped_buffer;
+    }
 
     if (!device->mapped_buffer_pools[index].has_init)
     {
@@ -1607,6 +1613,13 @@ struct Mapped_Buffer mega_alloc(struct Device* device, size_t size)
 }
 void mega_free(struct Device* device, struct Mapped_Buffer* mapped_buffer)
 {
+    if (mapped_buffer->pool_index == SIZE_MAX && mapped_buffer->index == SIZE_MAX)
+    {
+        upload_buffer_destroy(mapped_buffer->upload_buffer);
+        *mapped_buffer = (struct Mapped_Buffer){0};
+        return;
+    }
+
     size_t index = mapped_buffer->pool_index;
     if (index > MAX_MAPPED_BUFFER_POOLS)
         return;
