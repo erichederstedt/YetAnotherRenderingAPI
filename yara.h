@@ -37,6 +37,12 @@ enum BUFFER_TYPE
     BUFFER_TYPE_TEXTRUE2D,
     _BUFFER_TYPE_COUNT
 };
+enum BUFFER_USAGE
+{
+    BUFFER_USAGE_STATIC,
+    BUFFER_USAGE_DYNAMIC,
+    _BUFFER_USAGE_COUNT
+};
 enum RESOURCE_STATE
 {
     RESOURCE_STATE_UNKNOWN,
@@ -481,6 +487,7 @@ struct Swapchain_Descriptor
 };
 struct Buffer_Descriptor
 {
+    enum BUFFER_USAGE buffer_usage;
     unsigned long long width;
     unsigned long long height;
     enum BUFFER_TYPE buffer_type;
@@ -644,6 +651,8 @@ int command_list_close(struct Command_List* command_list);
 
 void descriptor_set_destroy(struct Descriptor_Set* descriptor_set);
 
+void* buffer_map(struct Buffer* buffer);
+void buffer_unmap(struct Buffer* buffer);
 void buffer_destroy(struct Buffer* buffer);
 struct Buffer_Descriptor buffer_get_descriptor(struct Buffer* buffer);
 void buffer_set_name(struct Buffer* buffer, const char* name);

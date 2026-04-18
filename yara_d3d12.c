@@ -8,6 +8,7 @@
 #pragma comment (lib, "Ole32.lib")
 #pragma comment (lib, "dxcompiler.lib")
 
+#include <stdio.h>
 #include <memory.h>
 void* alloc(size_t size)
 {
@@ -223,6 +224,11 @@ void device_destroy(struct Device* device)
 }
 int device_create_command_queue(struct Device* device, struct Command_Queue** out_command_queue)
 {
+    if (device->graphics_queue)
+    {
+        printf("Error: Cannot create more than one graphics queue");
+        return 1;
+    }
     *out_command_queue = alloc(sizeof(struct Command_Queue));
 
     D3D12_COMMAND_QUEUE_DESC command_queue_desc = {
@@ -233,6 +239,7 @@ int device_create_command_queue(struct Device* device, struct Command_Queue** ou
     };
     ID3D12Device_CreateCommandQueue(device->device, &command_queue_desc, &IID_ID3D12CommandQueue, &(*out_command_queue)->command_queue);
     (*out_command_queue)->device = device;
+    device->graphics_queue = *out_command_queue;
     return 0;
 }
 int device_create_swapchain(struct Device* device, struct Command_Queue* command_queue, struct Swapchain_Descriptor swapchain_descriptor, struct Swapchain** out_swapchain)
@@ -361,10 +368,28 @@ int device_create_buffer(struct Device* device, struct Buffer_Descriptor buffer_
     (*out_buffer)->ref_count = 1;
     (*out_buffer)->size = device_get_allocation_info(device, buffer_description).size;
     (*out_buffer)->buffer_type = buffer_description.buffer_type;
+    (*out_buffer)->buffer_usage = buffer_description.buffer_usage;
 
-    D3D12_HEAP_PROPERTIES default_heap_properties = {
+    D3D12_HEAP_PROPERTIES heap_properties = {
         .Type = D3D12_HEAP_TYPE_DEFAULT
     };
+    switch (buffer_description.buffer_usage)
+    {
+    case BUFFER_USAGE_STATIC:
+        heap_properties.Type = D3D12_HEAP_TYPE_DEFAULT;
+        break;
+    case BUFFER_USAGE_DYNAMIC:
+        if (/*CHECK IF GPU_UPLOAD AVAILABLE*/FALSE) // TODO(Eric): Fix this after upgrading to Win11
+        {
+            heap_properties.Type = D3D12_HEAP_TYPE_GPU_UPLOAD;
+        }
+        else
+        {
+            heap_properties.Type = D3D12_HEAP_TYPE_UPLOAD;
+        }
+        break;
+    }
+
     D3D12_RESOURCE_DESC resource_desc = to_d3d12_resource_desc(&buffer_description);
     D3D12_CLEAR_VALUE* ptrClearValue = 0;
     D3D12_CLEAR_VALUE clearValue = {0};
@@ -373,10 +398,26 @@ int device_create_buffer(struct Device* device, struct Buffer_Descriptor buffer_
         ptrClearValue = &clearValue;
         clearValue.Format = resource_desc.Format;
         clearValue.DepthStencil.Depth = 1.0f;
+
+        if (buffer_description.buffer_usage == BUFFER_USAGE_DYNAMIC)
+        {
+            printf("Error: All dynamic resources have to be read only");
+            free(*out_buffer);
+            *out_buffer = 0;
+            return 1;
+        }
     }
-    HRESULT result = ID3D12Device_CreateCommittedResource(device->device, &default_heap_properties, D3D12_HEAP_FLAG_NONE, &resource_desc, to_d3d12_resource_state[RESOURCE_STATE_COPY_DEST], ptrClearValue, &IID_ID3D12Resource, &(*out_buffer)->resource);
-    result;
+
+    D3D12_RESOURCE_STATES state = to_d3d12_resource_state[RESOURCE_STATE_COPY_DEST];
     (*out_buffer)->last_known_state = RESOURCE_STATE_COPY_DEST;
+    if (buffer_description.buffer_usage == BUFFER_USAGE_DYNAMIC)
+    {
+        state = D3D12_RESOURCE_STATE_GENERIC_READ;
+        (*out_buffer)->last_known_state = RESOURCE_STATE_UNKNOWN;
+    }
+
+    HRESULT result = ID3D12Device_CreateCommittedResource(device->device, &heap_properties, D3D12_HEAP_FLAG_NONE, &resource_desc, state, ptrClearValue, &IID_ID3D12Resource, &(*out_buffer)->resource);
+    result;
     (*out_buffer)->subresource_count = resource_desc.MipLevels * resource_desc.DepthOrArraySize;
     #if !USE_HASHMAP
     (*out_buffer)->buffer_state_index_cache_size = 16;
@@ -422,7 +463,6 @@ int device_create_upload_buffer(struct Device* device, void* opt_data, unsigned 
 
     return 0;
 }
-#include <stdio.h>
 int device_create_shader(struct Device* device, struct Shader** out_shader)
 {
     // D3D12_ROOT_SIGNATURE_DESC RootSignatureDesc = {
@@ -1015,6 +1055,8 @@ int find_buffer_state_index(struct Command_List* command_list, struct Buffer* bu
 }
 void command_list_set_buffer_state(struct Command_List* command_list, struct Buffer* buffer, enum RESOURCE_STATE to_state)
 {
+    if (buffer->buffer_usage == BUFFER_USAGE_DYNAMIC)
+        return;
     int buffer_state_index = find_buffer_state_index(command_list, buffer);
     if (buffer_state_index == -1)
     { // Handle buffer not being registered.
@@ -1065,7 +1107,6 @@ void command_list_unmap_buffer(struct Command_List* command_list, struct Buffer*
 
     command_list->device->delayed_free_queue;
     delayed_queue_push_back(&command_list->device->delayed_free_queue, &buffer->mapped_buffer);
-    device_delayed_free_queue_update(command_list->device);
 }
 int command_list_close(struct Command_List* command_list)
 {
@@ -1129,6 +1170,50 @@ struct Descriptor_Handle descriptor_set_alloc(struct Descriptor_Set* descriptor_
     return handle;
 }
 
+void* buffer_map(struct Buffer* buffer)
+{
+    void* buffer_ptr = 0;
+    switch (buffer->buffer_usage)
+    {
+    case BUFFER_USAGE_STATIC:
+        if (!buffer->buffer_map_info.upload_command_list)
+            device_create_command_list(buffer->device, &buffer->buffer_map_info.upload_command_list);
+        
+        command_list_reset(buffer->buffer_map_info.upload_command_list);
+        buffer_ptr = command_list_map_buffer(buffer->buffer_map_info.upload_command_list, buffer);
+        break;
+    case BUFFER_USAGE_DYNAMIC:
+        if (!buffer->buffer_map_info.intermediate_buffer)
+            buffer->buffer_map_info.intermediate_buffer = alloc(buffer->size);
+        
+        buffer_ptr = buffer->buffer_map_info.intermediate_buffer;
+        break;
+    }
+
+    return buffer_ptr;
+}
+void buffer_unmap(struct Buffer* buffer)
+{
+    switch (buffer->buffer_usage)
+    {
+    case BUFFER_USAGE_STATIC:
+        command_list_unmap_buffer(buffer->buffer_map_info.upload_command_list, buffer);
+        command_list_close(buffer->buffer_map_info.upload_command_list);
+        command_queue_execute(buffer->device->graphics_queue, &buffer->buffer_map_info.upload_command_list, 1);
+        break;
+    case BUFFER_USAGE_DYNAMIC:
+        D3D12_RESOURCE_DESC desc = {0};
+        ID3D12Resource_GetDesc(buffer->resource, &desc);
+        {
+            D3D12_RANGE read_range = {0};
+            void *mapped_address = 0;
+            ID3D12Resource_Map(buffer->resource, 0, &read_range, &mapped_address);
+            copy_unpack(mapped_address, buffer->buffer_map_info.intermediate_buffer, desc);
+            ID3D12Resource_Unmap(buffer->resource, 0, 0);
+        }
+        break;
+    }
+}
 void buffer_destroy(struct Buffer* buffer)
 {
     device_append_destroyed_objects(buffer->device, ACCESSED_OBJECT(buffer));

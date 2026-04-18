@@ -121,6 +121,7 @@ struct Device
     struct Accessed_Object* destroyed_objects;
     size_t destroyed_objects_size;
     size_t destroyed_objects_count;
+    struct Command_Queue* graphics_queue;
 
     struct Mapped_Buffer_Pool_Allocator mapped_buffer_pools[MAX_MAPPED_BUFFER_POOLS]; // 26 will max out at 64MB pools.
     struct Delayed_Queue delayed_free_queue;
@@ -197,8 +198,15 @@ struct Buffer
     struct Device* device;
     unsigned long long size;
     enum BUFFER_TYPE buffer_type;
+    enum BUFFER_USAGE buffer_usage;
     struct Mapped_Buffer mapped_buffer;
     unsigned int subresource_count;
+
+    union
+    {
+        struct Command_List* upload_command_list; // buffer_usage == STATIC
+        void* intermediate_buffer; // buffer_usage == DYNAMIC
+    } buffer_map_info;
 
     #if !USE_HASHMAP
     struct Buffer_State_Index* buffer_state_index_cache;
